@@ -1,7 +1,7 @@
 {
   "name": "xfyun-workbench",
   "version": "2.0.0",
-  "description": "星火工作台 V2 · 讯飞星辰 MaaS 团队大模型对话工作台（员工账号体系 / 角色权限 / 数据隔离 / 审计留痕）",
+  "description": "同聪星火 V2 · 讯飞星辰 MaaS 团队大模型对话工作台（员工账号体系 / 角色权限 / 数据隔离 / 审计留痕）",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

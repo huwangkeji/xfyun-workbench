@@ -3,15 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>访问验证 · 星火工作台</title>
+  <title>访问验证 · 同聪星火</title>
   <link rel="stylesheet" href="/assets/style.css" />
 </head>
 <body>
   <div class="login-wrap">
     <form class="login-card" id="loginForm" autocomplete="off">
       <div class="login-brand">
-        <div class="logo">星</div>
-        <div class="t">星火 MaaS 文本对话工作台</div>
+        <div class="t">同聪星火</div>
         <div class="s">本站已开启访问密码</div>
       </div>
 
@@ -45,7 +44,7 @@
         .then(function (r) { return r.json(); })
         .then(function (d) {
           if (d && d.ok && d.data && (!d.data.enabled || d.data.authenticated)) {
-            location.replace('/');
+            location.replace('/app');
           }
         })
         .catch(function () { /* 服务未启动时静默，提交时自然报错 */ });
@@ -65,7 +64,7 @@
           });
           var data = await resp.json().catch(function () { return {}; });
           if (resp.ok && data.ok) {
-            location.replace('/');
+            location.replace('/app');
             return;
           }
           showErr(data.error || ('验证失败（HTTP ' + resp.status + '）'));

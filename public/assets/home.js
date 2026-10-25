@@ -15,7 +15,7 @@
           const el = document.getElementById(id);
           if (el) el.style.display = 'none';
         });
-        ['navMeBtn', 'navEnterBtn'].forEach((id) => {
+        ['navMeBtn', 'navEnterBtn', 'heroEnterBtn', 'ctaEnterBtn'].forEach((id) => {
           const el = document.getElementById(id);
           if (el) el.style.display = '';
         });

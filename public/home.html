@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>星火工作台 · 团队大模型协作门户</title>
+  <title>同聪星火 · 团队大模型协作门户</title>
   <meta name="description" content="基于讯飞星辰 MaaS 的团队大模型对话工作台：多模型、多配置调度、图片理解、联网搜索、成员权限与数据隔离。" />
   <link rel="stylesheet" href="/assets/style.css" />
 </head>
@@ -12,9 +12,8 @@
   <!-- 顶导航 -->
   <header class="lp-nav">
     <div class="lp-nav-inner">
-      <a class="lp-brand" href="/home">
-        <span class="logo">星</span>
-        <span class="lp-brand-name">星火工作台</span>
+      <a class="lp-brand" href="/">
+        <span class="lp-brand-name">同聪星火</span>
         <span class="lp-brand-tag">团队版</span>
       </a>
       <nav class="lp-nav-links" id="lpNavLinks">
@@ -29,7 +28,7 @@
         <a class="btn primary" id="navRegisterBtn" href="/team-login#register">注册账号</a>
         <!-- 已登录：进入工作台 / 员工中心 -->
         <a class="btn" id="navMeBtn" href="/me" style="display:none">员工中心</a>
-        <a class="btn primary" id="navEnterBtn" href="/" style="display:none">进入工作台</a>
+        <a class="btn primary" id="navEnterBtn" href="/app" style="display:none">进入工作台</a>
         <button class="lp-nav-toggle" id="lpNavToggle" aria-label="菜单">☰</button>
       </div>
     </div>
@@ -45,6 +44,7 @@
         <div class="lp-hero-cta">
           <a class="btn primary lp-btn-lg" id="heroLoginBtn" href="/team-login">员工登录</a>
           <a class="btn lp-btn-lg lp-btn-ghost" id="heroRegisterBtn" href="/team-login#register">注册账号</a>
+          <a class="btn primary lp-btn-lg" id="heroEnterBtn" href="/app" style="display:none">进入工作台</a>
         </div>
         <div class="lp-hero-note" id="lpRegisterNote" style="display:none">当前未开放自助注册，账号请联系管理员创建</div>
         <div class="lp-hero-meta">
@@ -53,7 +53,7 @@
       </div>
       <div class="lp-hero-visual" aria-hidden="true">
         <div class="lp-mock">
-          <div class="lp-mock-bar"><i></i><i></i><i></i><span>星火工作台</span></div>
+          <div class="lp-mock-bar"><i></i><i></i><i></i><span>同聪星火</span></div>
           <div class="lp-mock-body">
             <div class="lp-mock-msg user">帮我把这段会议纪要整理成三条待办</div>
             <div class="lp-mock-msg ai">
@@ -178,6 +178,7 @@
       <div class="lp-hero-cta">
         <a class="btn primary lp-btn-lg" id="ctaLoginBtn" href="/team-login">员工登录</a>
         <a class="btn lp-btn-lg lp-btn-ghost" id="ctaRegisterBtn" href="/team-login#register">注册账号</a>
+        <a class="btn primary lp-btn-lg" id="ctaEnterBtn" href="/app" style="display:none">进入工作台</a>
       </div>
       <div class="lp-faq">
         <details>
@@ -199,16 +200,15 @@
   <footer class="lp-footer">
     <div class="lp-footer-inner">
       <div class="lp-footer-brand">
-        <span class="logo">星</span>
         <div>
-          <b>星火工作台 · 团队版</b>
+          <b>同聪星火 · 团队版</b>
           <span>基于讯飞星辰 MaaS 开源模型 API</span>
         </div>
       </div>
       <div class="lp-footer-links">
         <a href="/team-login">员工登录</a>
         <a href="/team-login#register">注册账号</a>
-        <a href="/">工作台</a>
+        <a href="/app">工作台</a>
         <a href="/admin">后台管理</a>
       </div>
       <div class="lp-footer-note">由 沧州虎王科技 开发 · Node.js + Express 私有部署</div>

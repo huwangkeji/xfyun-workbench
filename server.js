@@ -116,7 +116,7 @@ app.get('/api/health', (req, res) => res.json({ ok: true, name: 'xfyun-workbench
 // 员工登录页（/team-login 与 /admin/login 双入口，已登录则分别跳工作台/后台）。
 // 注意：必须早于下方静态托管，否则会被 express.static 直接吐出而绕过守卫。
 app.get('/team-login', (req, res) => {
-  if (adminAuth.resolveTeamUser(req)) return res.redirect('/');
+  if (adminAuth.resolveTeamUser(req)) return res.redirect('/app');
   res.sendFile(path.join(__dirname, 'public', 'team-login.html'));
 });
 app.get('/admin/login', (req, res) => {
@@ -125,7 +125,7 @@ app.get('/admin/login', (req, res) => {
 });
 // 后台页面仅 owner/admin 可进入（member/viewer 从工作台/员工中心使用；数据隔离见 P2）
 function adminPageGuard(req, res, next) {
-  if (!['owner', 'admin'].includes(req.user.role)) return res.redirect('/');
+  if (!['owner', 'admin'].includes(req.user.role)) return res.redirect('/app');
   return next();
 }
 app.get('/admin', adminAuth.requireTeamPage, adminPageGuard, (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
@@ -134,12 +134,14 @@ app.get('/admin.html', adminAuth.requireTeamPage, adminPageGuard, (req, res) => 
 // 员工中心（/me）：任何登录员工可进入（基本信息 / 我的数据 / 登录记录 / 改密）
 app.get('/me', adminAuth.requireTeamPage, (req, res) => res.sendFile(path.join(__dirname, 'public', 'me.html')));
 
-// 门户首页（/home）：公开介绍页 + 员工登录/注册入口（不含敏感数据，无需守卫）
-app.get('/home', (req, res) => res.sendFile(path.join(__dirname, 'public', 'home.html')));
+// 系统首页（/）：门户介绍页 + 员工登录/注册入口（公开，无需守卫）
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'home.html')));
+// 旧路径 /home 永久跳转首页，兼容既有书签/外链
+app.get('/home', (req, res) => res.redirect(301, '/'));
 
 // 工作台登录页（访客密码保护开启时使用；已放行/功能关闭则直接进工作台）
 app.get('/login', (req, res) => {
-  if (adminAuth.hasWorkbenchAccess(req)) return res.redirect('/');
+  if (adminAuth.hasWorkbenchAccess(req)) return res.redirect('/app');
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
@@ -149,9 +151,10 @@ app.get(/^\/s\/([A-Za-z0-9_-]{8,64})$/, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'share.html'));
 });
 
-// 工作台首页（带访客密码守卫）。必须早于下方静态托管——
+// 工作台（/app，带访客密码守卫）。必须早于下方静态托管——
 // 否则 express.static 的默认 index 会直接吐出 index.html，绕过 requireWorkbenchPage。
-app.get(/^\/(index\.html)?$/, adminAuth.requireWorkbenchPage, (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+// /index.html 一并守卫：防止访客密码开启时被静态托管直读文件绕过。
+app.get(['/app', '/index.html'], adminAuth.requireWorkbenchPage, (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 // 静态前端
 app.use(express.static(path.join(__dirname, 'public')));

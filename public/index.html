@@ -3,18 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>星火工作台 · 文本对话</title>
+  <title>同聪星火 · 文本对话</title>
   <link rel="stylesheet" href="/assets/style.css" />
 </head>
 <body class="wb-page">
   <header class="topbar">
     <div class="brand">
-      <div class="logo">星</div>
-      <span class="brand-title">星火 MaaS 文本对话工作台</span>
-      <span class="tag">沧州虎王科技V2</span>
+      <span class="brand-title">同聪星火</span>
     </div>
     <div class="top-actions">
-      <a class="btn" href="/home" title="返回门户首页">首页</a>
+      <a class="btn" href="/" title="返回门户首页">首页</a>
       <span class="tag" id="teamUserTag" style="display:none"></span>
       <a class="btn" id="meCenterBtn" href="/me" style="display:none" title="个人信息 / 我的数据 / 登录记录">员工中心</a>
       <button class="btn" id="teamLogoutBtn" style="display:none" title="退出员工账号登录">退出登录</button>
@@ -62,13 +60,17 @@
           <button class="param-toggle" id="thinkingBtn" title="开启后模型进行深度思考（推理更充分，耗时更长）">
             <span class="dot"></span>🧠 深度思考
           </button>
-          <label class="param-select" id="effortLabel" title="思考强度：high 均衡 / max 最强（耗时更长）">
-            强度
-            <select id="effortSelect">
+          <span class="param-select" id="effortLabel" title="思考强度：high 均衡 / max 最强（耗时更长）">
+            <span>强度</span>
+            <select id="effortSelect" hidden>
               <option value="high">high</option>
               <option value="max">max</option>
             </select>
-          </label>
+            <span class="seg" id="effortSeg">
+              <button type="button" class="seg-btn" data-value="high">high</button>
+              <button type="button" class="seg-btn" data-value="max">max</button>
+            </span>
+          </span>
           <button class="param-toggle" id="webSearchBtn" title="允许模型调用联网搜索获取实时信息">
             <span class="dot"></span>🌐 联网搜索
           </button>

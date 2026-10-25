@@ -22,6 +22,7 @@ const els = {
   thinkingBtn: document.getElementById('thinkingBtn'),
   effortSelect: document.getElementById('effortSelect'),
   effortLabel: document.getElementById('effortLabel'),
+  effortSeg: document.getElementById('effortSeg'),
   webSearchBtn: document.getElementById('webSearchBtn'),
   promptBtn: document.getElementById('promptBtn'),
   promptPanel: document.getElementById('promptPanel'),
@@ -103,6 +104,12 @@ function renderParams() {
   if (els.thinkingBtn) els.thinkingBtn.classList.toggle('active', params.enableThinking);
   if (els.webSearchBtn) els.webSearchBtn.classList.toggle('active', params.webSearch);
   if (els.effortSelect) els.effortSelect.value = params.reasoningEffort;
+  // 分段选择器视觉态与参数同步（localStorage 恢复 / 深度思考开关重渲染时保持一致）
+  if (els.effortSeg) {
+    els.effortSeg.querySelectorAll('.seg-btn').forEach((b) => {
+      b.classList.toggle('active', b.dataset.value === params.reasoningEffort);
+    });
+  }
   // 深度思考关闭时禁用强度选择
   if (els.effortLabel) els.effortLabel.classList.toggle('disabled', !params.enableThinking);
   if (els.promptBtn) els.promptBtn.classList.toggle('active', !!params.systemPrompt);
@@ -125,6 +132,16 @@ if (els.effortSelect) els.effortSelect.addEventListener('change', () => {
   renderParams();
   toast(`思考强度：${params.reasoningEffort}`, 'success');
 });
+// 强度分段选择器：点击 → 同步隐藏 select 并复用其 change 逻辑（存储/提示/重渲染）
+if (els.effortSeg) {
+  els.effortSeg.addEventListener('click', (e) => {
+    const btn = e.target.closest('.seg-btn');
+    if (!btn || btn.classList.contains('active')) return;
+    if (els.effortLabel && els.effortLabel.classList.contains('disabled')) return;
+    els.effortSelect.value = btn.dataset.value;
+    els.effortSelect.dispatchEvent(new Event('change'));
+  });
+}
 if (els.webSearchBtn) els.webSearchBtn.addEventListener('click', () => {
   params.webSearch = !params.webSearch;
   setPref(PARAM_KEYS.webSearch, params.webSearch ? '1' : '0');
@@ -197,9 +214,14 @@ async function api(path, options = {}) {
   }
   const data = await resp.json().catch(() => ({}));
   if (resp.status === 401) {
-    // 工作台开启了密码保护且未登录（或会话过期）→ 跳登录页
-    toast('请先输入工作台密码', 'error');
-    setTimeout(() => { location.href = '/login'; }, 900);
+    // 区分两种未登录：访客密码保护 → 访客登录页；员工会话失效/停用 → 员工登录页
+    if (data.code === 'WB_AUTH_REQUIRED') {
+      toast('请先输入工作台密码', 'error');
+      setTimeout(() => { location.href = '/login'; }, 900);
+    } else {
+      toast('登录已失效，请重新登录', 'error');
+      setTimeout(() => { location.href = '/team-login'; }, 900);
+    }
     const e = new Error(data.error || '未登录');
     e.status = 401;
     throw e;
@@ -297,9 +319,14 @@ function uploadImage(item) {
     let data = {};
     try { data = JSON.parse(xhr.responseText || '{}'); } catch (_) { data = {}; }
     if (xhr.status === 401) {
-      // 工作台密码保护：未登录 → 跳登录页（与 api() 行为一致）
-      toast('请先输入工作台密码', 'error');
-      setTimeout(() => { location.href = '/login'; }, 900);
+      // 与 api() 一致：访客密码 → /login；员工会话失效 → /team-login
+      if (data.code === 'WB_AUTH_REQUIRED') {
+        toast('请先输入工作台密码', 'error');
+        setTimeout(() => { location.href = '/login'; }, 900);
+      } else {
+        toast('登录已失效，请重新登录', 'error');
+        setTimeout(() => { location.href = '/team-login'; }, 900);
+      }
       item.status = 'error';
       item.error = '未登录';
     } else if (xhr.status >= 200 && xhr.status < 300 && data.ok && data.data && data.data.files && data.data.files[0]) {
