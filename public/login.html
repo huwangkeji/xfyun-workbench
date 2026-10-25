@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>访问验证 · 星火工作台</title>
+  <link rel="stylesheet" href="/assets/style.css" />
+</head>
+<body>
+  <div class="login-wrap">
+    <form class="login-card" id="loginForm" autocomplete="off">
+      <div class="login-brand">
+        <div class="logo">星</div>
+        <div class="t">星火 MaaS 文本对话工作台</div>
+        <div class="s">本站已开启访问密码</div>
+      </div>
+
+      <div class="login-err" id="loginErr"></div>
+
+      <label class="field">
+        <span>访问密码</span>
+        <input class="input" id="pwd" type="password" placeholder="请输入工作台访问密码" autofocus />
+      </label>
+      <button class="btn primary login-btn" id="loginBtn" type="submit">进 入 工 作 台</button>
+
+      <div class="login-foot">
+        <a href="/admin">后台管理入口</a>
+      </div>
+    </form>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+      var form = document.getElementById('loginForm');
+      var pwd = document.getElementById('pwd');
+      var err = document.getElementById('loginErr');
+      var btn = document.getElementById('loginBtn');
+
+      function showErr(msg) { err.textContent = msg; err.classList.add('show'); }
+      function hideErr() { err.classList.remove('show'); }
+
+      // 状态探测：功能已关闭或已登录 → 直接进工作台
+      fetch('/api/workbench/status')
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d && d.ok && d.data && (!d.data.enabled || d.data.authenticated)) {
+            location.replace('/');
+          }
+        })
+        .catch(function () { /* 服务未启动时静默，提交时自然报错 */ });
+
+      form.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        hideErr();
+        var password = pwd.value;
+        if (!password) { showErr('请输入访问密码'); return; }
+        btn.disabled = true;
+        btn.textContent = '验证中…';
+        try {
+          var resp = await fetch('/api/workbench/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: password })
+          });
+          var data = await resp.json().catch(function () { return {}; });
+          if (resp.ok && data.ok) {
+            location.replace('/');
+            return;
+          }
+          showErr(data.error || ('验证失败（HTTP ' + resp.status + '）'));
+        } catch (e2) {
+          showErr('无法连接后端服务，请确认服务已启动（默认 http://127.0.0.1:4000）');
+        } finally {
+          btn.disabled = false;
+          btn.textContent = '进 入 工 作 台';
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

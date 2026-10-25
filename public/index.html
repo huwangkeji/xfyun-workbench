@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>星火工作台 · 文本对话</title>
+  <link rel="stylesheet" href="/assets/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">星</div>
+      <span>星火 MaaS 文本对话工作台</span>
+      <span class="tag">开源模型 · OpenAI Chat</span>
+    </div>
+    <div class="top-actions">
+      <button class="btn" id="wbLogoutBtn" style="display:none" title="退出工作台登录">退出登录</button>
+      <button class="btn" id="clearChatBtn">清空本会话</button>
+      <a class="btn" href="/admin">后台管理</a>
+    </div>
+  </header>
+
+  <div class="workbench">
+    <!-- 侧边栏：配置 / 会话 -->
+    <aside class="sidebar">
+      <h3>选中的 API 配置</h3>
+      <select class="select tail-select" id="configSelect"></select>
+
+      <h3>会话</h3>
+      <div class="conv-toolbar">
+        <button class="btn primary btn-sm" id="newConvBtn">＋ 新增对话</button>
+        <button class="btn danger btn-sm" id="delConvBtn">删除对话</button>
+      </div>
+      <div id="convList"></div>
+    </aside>
+
+    <!-- 聊天区 -->
+    <section class="chat-area">
+      <div class="chat-head">
+        <div id="curConfigName" style="font-weight:600">未选择配置</div>
+        <div class="chat-head-right">
+          <button class="btn btn-sm" id="webSearchBtn" title="开启后本次对话允许模型调用联网搜索获取实时信息（星火 MaaS web_search 工具）">🌐 联网搜索</button>
+          <div id="statusLine" class="typing"></div>
+        </div>
+      </div>
+
+      <div class="chat-messages" id="messages"></div>
+
+      <div class="chat-input" id="chatInput">
+        <div class="attach-row" id="attachRow" style="display:none"></div>
+        <div class="wrap">
+          <textarea id="input" placeholder="输入问题，Enter 发送 / Shift+Enter 换行；支持 Ctrl+V 粘贴或拖入图片（PNG/JPEG/GIF/WebP，单张≤8MB，最多9张）" rows="1"></textarea>
+          <div class="send-side">
+            <button class="icon-btn" id="attachBtn" title="选择图片上传（也可直接 Ctrl+V 粘贴 / 拖入）">📎</button>
+            <button class="btn primary" id="sendBtn">发送</button>
+          </div>
+        </div>
+        <div class="attach-hint">💡 粘贴/拖入的图片会先上传到本机 public/uploads，随消息一起发给模型；历史消息中的图片以缩略图展示。联网搜索开关对当次会话生效（记住选择）。</div>
+        <input type="file" id="fileInput" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden />
+      </div>
+    </section>
+  </div>
+
+  <div class="toast-wrap" id="toastWrap"></div>
+
+  <script src="/assets/app.js"></script>
+</body>
+</html>

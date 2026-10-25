@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>后台管理 · 星火工作台</title>
+  <link rel="stylesheet" href="/assets/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">管</div>
+      <span>星火工作台 · 后台管理</span>
+    </div>
+    <div class="top-actions">
+      <button class="btn" id="changePwdBtn" title="修改后台管理密码">修改密码</button>
+      <button class="btn" id="logoutBtn" title="退出后台管理登录">退出登录</button>
+      <a class="btn" href="/">返回工作台</a>
+    </div>
+  </header>
+
+  <main class="admin">
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="api">API 配置</button>
+      <button class="tab-btn" data-tab="logs">运行日志 <span id="logCountBadge" class="badge" style="margin-left:4px">0</span></button>
+      <button class="tab-btn" data-tab="network">云中心延时</button>
+      <button class="tab-btn" data-tab="memory">记忆管理</button>
+    </div>
+
+    <!-- API 配置 -->
+    <div class="tab-pane active" id="pane-api">
+      <!-- 工作台访问控制 -->
+      <div class="card" id="wbAuthCard">
+        <div class="card-title">工作台访问控制（访客密码）</div>
+        <div class="row-2" style="align-items:flex-end">
+          <label class="field" style="display:flex;align-items:center;gap:8px">
+            <input type="checkbox" id="wb_enabled" /> <span>开启密码保护：游客须输入正确密码才能使用工作台</span>
+          </label>
+          <label class="field"><span>访客密码（至少 4 位，留空 = 不修改）</span><input class="input" id="wb_password" type="password" placeholder="设置或修改访客密码" autocomplete="new-password" /></label>
+          <button class="btn primary" id="saveWbAuthBtn">保存</button>
+        </div>
+        <div class="hint" style="margin-top:6px">
+          开启前需先设置访客密码；关闭后工作台恢复开放。<b>后台登录态默认放行工作台</b>（Owner 无需重复输入）。密码 scrypt 哈希存储；同 IP 连续 5 次密码错误锁定 60 秒；会话有效期 12 小时。
+        </div>
+      </div>
+      <div class="card" id="schedCard">
+        <div class="card-title">多 API 调度策略</div>
+        <div class="row-2" style="align-items:flex-end">
+          <label class="field" style="display:flex;align-items:center;gap:8px">
+            <input type="checkbox" id="s_autoSwitch" /> <span>自动切换：当前配置扣费失败 / 超时 / 限流时，自动换下一个可用配置</span>
+          </label>
+          <label class="field"><span>故障冷却（秒）</span><input class="input" id="s_cooldownSec" type="number" min="1" max="3600" /></label>
+          <button class="btn primary" id="saveSchedBtn">保存调度设置</button>
+        </div>
+        <div class="hint" style="margin-top:6px">
+          <b>调度顺序</b>：默认配置（标记为「默认」的）优先 → 其次按「调度优先级」从小到大 → 最后按创建时间。故障配置会进入冷却期，冷却结束后自动恢复参与调度。每个 API 配置可在下方「参与自动调度」「调度优先级」中设置。
+        </div>
+      </div>
+      <div class="toolbar">
+        <button class="btn primary" id="addConfigBtn">+ 新增配置</button>
+        <span class="spacer"></span>
+        <span class="tag" id="cfgStats"></span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>名称</th><th>状态</th><th>调度</th><th>API 地址</th><th>模型</th><th>API Key</th>
+              <th>温度</th><th>Top P</th><th>Max Tokens</th><th>思考</th><th>更新时间</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="configRows"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 运行日志 -->
+    <div class="tab-pane" id="pane-logs">
+      <div class="toolbar">
+        <select class="select" id="statusFilter" style="width:auto">
+          <option value="">全部状态</option>
+          <option value="ok">成功 (ok)</option>
+          <option value="error">失败 (error)</option>
+        </select>
+        <button class="btn" id="refreshLogsBtn">刷新</button>
+        <span class="spacer"></span>
+        <span class="btn danger" id="clearLogsBtn">清空日志</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>时间</th><th>状态</th><th>配置</th><th>模型</th><th>耗时</th>
+              <th>Tokens(入/出/总)</th><th>问题</th><th>回复摘要</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="logRows"></tbody>
+        </table>
+      </div>
+      <div class="pager">
+        <button class="btn" id="prevPageBtn">上一页</button>
+        <span id="pageInfo">第 1 页</span>
+        <button class="btn" id="nextPageBtn">下一页</button>
+      </div>
+    </div>
+
+    <!-- 云中心延时 / 连通性 -->
+    <div class="tab-pane" id="pane-network">
+      <div class="toolbar">
+        <button class="btn primary" id="pingBtn">立即测量连通性 / 延时</button>
+        <span class="tag">自动获取云中心通信能力 · 每 30s 自动刷新</span>
+        <span class="spacer"></span>
+        <span class="tag" id="pingStatus"></span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>配置</th><th>模型</th><th>默认</th><th>云中心地址</th>
+              <th>连通性</th><th>延时(ms)</th><th>HTTP</th><th>说明</th><th>探测时间</th>
+            </tr>
+          </thead>
+          <tbody id="pingRows"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 记忆管理 · 会话记录 -->
+    <div class="tab-pane" id="pane-memory">
+      <div class="card">
+        <div class="card-title">记忆管理 · 会话记录</div>
+        <div class="hint">汇总工作台产生的全部会话记录：可关键字搜索（标题 / 备注 / 消息内容）、查看完整对话、添加<b>管理员备注</b>（仅后台可见，用于记录运营备忘），并支持导出（JSON / Markdown）与删除。</div>
+        <div class="mem-stats" id="memStats"></div>
+        <div class="toolbar">
+          <input class="input" id="memKeyword" placeholder="搜索标题 / 备注 / 消息内容，回车搜索" style="max-width:340px" />
+          <button class="btn primary" id="memSearchBtn">搜索</button>
+          <button class="btn" id="memResetBtn">重置</button>
+          <span class="spacer"></span>
+          <button class="btn" id="memRefreshBtn">刷新</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>标题</th><th>消息数</th><th>管理员备注</th><th>创建时间</th><th>更新时间</th><th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="memRows"></tbody>
+          </table>
+        </div>
+        <div class="pager">
+          <button class="btn" id="memPrevBtn">上一页</button>
+          <span id="memPageInfo">第 1 页</span>
+          <button class="btn" id="memNextBtn">下一页</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- 会话记录详情（记忆管理） -->
+  <div class="modal-mask" id="memoryModal" style="display:none">
+    <div class="modal" style="max-width:780px">
+      <div class="modal-head">
+        <span id="memoryModalTitle">会话记录</span>
+        <button class="close-x" data-close="memoryModal">&times;</button>
+      </div>
+      <div class="modal-body" id="memoryModalBody"></div>
+      <div class="modal-foot">
+        <button class="btn" id="memExportJsonBtn">导出 JSON</button>
+        <button class="btn" id="memExportMdBtn">导出 Markdown</button>
+        <span class="spacer"></span>
+        <button class="btn danger" id="memDeleteBtn">删除该会话</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 修改密码 -->
+  <div class="modal-mask" id="pwdModal" style="display:none">
+    <div class="modal" style="max-width:420px">
+      <div class="modal-head">
+        <span>修改后台密码</span>
+        <button class="close-x" data-close="pwdModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <label class="field"><span>当前密码</span><input class="input" id="p_old" type="password" placeholder="请输入当前密码" /></label>
+        <label class="field"><span>新密码（至少 4 位）</span><input class="input" id="p_new1" type="password" placeholder="请输入新密码" /></label>
+        <label class="field"><span>确认新密码</span><input class="input" id="p_new2" type="password" placeholder="再次输入新密码" /></label>
+        <div class="hint">修改成功后所有登录会话失效，需使用新密码重新登录。</div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" data-close="pwdModal">取消</button>
+        <button class="btn primary" id="savePwdBtn">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 配置编辑弹层 -->
+  <div class="modal-mask" id="configModal" style="display:none">
+    <div class="modal">
+      <div class="modal-head">
+        <span id="modalTitle">新增配置</span>
+        <button class="close-x" data-close="configModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="f_id" />
+        <label class="field"><span>名称</span><input class="input" id="f_name" placeholder="例如：星火 Spark-X2.5" /></label>
+        <label class="field"><span>API 地址（baseUrl，无需 /v2）</span><input class="input" id="f_baseUrl" placeholder="https://maas-api.cn-huabei-1.xf-yun.com" /></label>
+        <label class="field"><span>API Key</span><input class="input" id="f_apiKey" placeholder="ak-..." /><div class="hint">编辑时留空则保留原 Key</div></label>
+        <label class="field"><span>模型 model</span><input class="input" id="f_model" placeholder="例如：xopglm53" /></label>
+        <div class="row-2">
+          <label class="field"><span>Temperature (0~1)</span><input class="input" id="f_temperature" type="number" step="0.1" value="0.7" /></label>
+          <label class="field"><span>Top P (0~1)</span><input class="input" id="f_topP" type="number" step="0.05" /></label>
+        </div>
+        <div class="row-2">
+          <label class="field"><span>Max Completion Tokens</span><input class="input" id="f_maxTokens" type="number" placeholder="留空=不限制" /></label>
+          <label class="field"><span>思考强度 reasoning_effort</span>
+            <select class="select" id="f_reasoningEffort">
+              <option value="high">high（默认）</option><option value="max">max（更深推理）</option>
+            </select>
+            <div class="hint">官方取值 high / max；旧的 low / medium 会按文档兼容映射为 high</div>
+          </label>
+        </div>
+        <label class="field" style="display:flex;align-items:center;gap:8px">
+          <input type="checkbox" id="f_enableThinking" /> <span>启用深度思考 enable_thinking</span>
+        </label>
+        <label class="field" style="display:flex;align-items:center;gap:8px">
+          <input type="checkbox" id="f_webSearch" /> <span>启用网络搜索 web_search（内置工具）</span>
+        </label>
+        <div class="row-2">
+          <label class="field"><span>重复惩罚 presence_penalty (-2~2)</span><input class="input" id="f_presencePenalty" type="number" step="0.1" value="0" /></label>
+          <label class="field"><span>频率惩罚 frequency_penalty (-2~2)</span><input class="input" id="f_frequencyPenalty" type="number" step="0.1" value="0" /></label>
+        </div>
+        <label class="field"><span>自定义功能 · 系统提示 systemPrompt（会注入为 system 消息）</span>
+          <textarea id="f_systemPrompt" rows="3" placeholder="例如：你是专业的中文助手，回答要简洁准确，用中文回复。"></textarea>
+        </label>
+        <div class="row-2">
+          <label class="field" style="display:flex;align-items:center;gap:8px">
+            <input type="checkbox" id="f_enabled" checked /> <span>参与自动调度</span>
+          </label>
+          <label class="field"><span>调度优先级（越小越优先，默认 100）</span><input class="input" id="f_priority" type="number" min="0" max="999" value="100" /></label>
+        </div>
+        <label class="field"><span>终端用户标识 user（可选，仅字母/数字/-/_，≤512 字符）</span><input class="input" id="f_user" placeholder="如 user-001" /></label>
+
+        <div class="field-sep">— 图片生成（TTI）设置 —</div>
+        <label class="field" style="display:flex;align-items:center;gap:8px">
+          <input type="checkbox" id="f_ttiEnabled" /> <span>启用图片生成（工作台「🎨 图片生成」）；需配置下方图片模型并确认 API Key 有该模型权限</span>
+        </label>
+        <div class="row-2">
+          <label class="field"><span>图片模型 ModelID（domain）</span><input class="input" id="f_ttiModel" placeholder="与对话模型不同，需在服务管控获取" /></label>
+          <label class="field"><span>图片生成 API 地址（ttiBaseUrl，留空=同 baseUrl）</span><input class="input" id="f_ttiBaseUrl" placeholder="https://maas-api.cn-huabei-1.xf-yun.com" /></label>
+        </div>
+        <div class="row-2">
+          <label class="field"><span>默认宽度 (256~1024)</span><input class="input" id="f_ttiWidth" type="number" value="512" /></label>
+          <label class="field"><span>默认高度 (256~1024)</span><input class="input" id="f_ttiHeight" type="number" value="512" /></label>
+        </div>
+        <div class="row-2">
+          <label class="field"><span>默认随机种子 seed（0=随机）</span><input class="input" id="f_ttiSeed" type="number" value="0" /></label>
+          <label class="field"><span>步长 num_inference_steps (0~50)</span><input class="input" id="f_numInferenceSteps" type="number" value="20" /></label>
+        </div>
+        <div class="row-2">
+          <label class="field"><span>相关度 guidance_scale (0~20)</span><input class="input" id="f_guidanceScale" type="number" value="5" step="0.5" /></label>
+          <label class="field"><span>调度器 scheduler</span>
+            <select class="select" id="f_scheduler">
+              <option value="DPM++ 2M Karras">DPM++ 2M Karras（默认）</option>
+              <option value="DPM++ SDE Karras">DPM++ SDE Karras</option>
+              <option value="DDIM">DDIM</option>
+              <option value="Euler a">Euler a</option>
+              <option value="Euler">Euler</option>
+            </select>
+          </label>
+        </div>
+        <label class="field"><span>默认负面提示 negative_prompts（可选）</span>
+          <textarea id="f_negativePrompt" rows="2" placeholder="例如：模糊，低质量，失真"></textarea>
+        </label>
+        <label class="field"><span>图片用户标识 uid（可选，≤32 字符）</span><input class="input" id="f_uid" placeholder="如 uid-001" /></label>
+        <label class="field"><span>patch_id（可选，非全量训练模型需要，来自平台，多个用逗号分隔）</span><input class="input" id="f_patchId" placeholder="留空则提交空数组；如 123456 或 123456,789012" /></label>
+
+        <label class="field"><span>备注</span><input class="input" id="f_remark" placeholder="可选" /></label>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" data-close="configModal">取消</button>
+        <button class="btn primary" id="saveConfigBtn">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 日志详情弹层 -->
+  <div class="modal-mask" id="logModal" style="display:none">
+    <div class="modal" style="max-width:760px">
+      <div class="modal-head">
+        <span>日志详情</span>
+        <button class="close-x" data-close="logModal">&times;</button>
+      </div>
+      <div class="modal-body" id="logModalBody"></div>
+    </div>
+  </div>
+
+  <!-- 测试结果弹层 -->
+  <div class="modal-mask" id="testModal" style="display:none">
+    <div class="modal" style="max-width:520px">
+      <div class="modal-head">
+        <span>Token 可用性测试</span>
+        <button class="close-x" data-close="testModal">&times;</button>
+      </div>
+      <div class="modal-body" id="testModalBody"></div>
+    </div>
+  </div>
+
+  <div class="toast-wrap" id="toastWrap"></div>
+
+  <script src="/assets/admin.js"></script>
+</body>
+</html>

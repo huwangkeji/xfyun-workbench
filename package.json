@@ -1,0 +1,15 @@
+{
+  "name": "xfyun-workbench",
+  "version": "1.0.0",
+  "description": "讯飞星火 MaaS 开源模型文本对话工作台 + 后台管理（API 配置 / 日志记录）",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
