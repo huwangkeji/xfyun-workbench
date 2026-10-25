@@ -1,10 +1,63 @@
 'use strict';
 
+const crypto = require('crypto');
 const db = require('./db');
 const env = require('./env');
 const adminAuth = require('./adminAuth'); // 工作台访客密码的哈希存储（adminAuth 不依赖本模块，无循环引用）
 
 const DEFAULT_NAME = '星火开源模型';
+
+/* ================= API Key 静态加密（可选） =================
+ * 设置环境变量 DB_ENCRYPT_KEY 后，写入 db.json 的 apiKey 以 AES-256-GCM 加密
+ * （格式 enc:v1:<iv>.<tag>.<ct>，iv/tag/ct 均为 base64url）；
+ * 不设置时行为与旧版完全一致（明文存储），保证零配置兼容。
+ * 注意：密钥只来自环境变量，不落库；丢失密钥 = 无法解密已加密的 Key
+ *       （启动时会打印警告，相关配置调用将失败并提示）。
+ */
+const ENC_PREFIX = 'enc:v1:';
+
+function encryptionKey() {
+  return env.getEnv('DB_ENCRYPT_KEY');
+}
+
+function deriveKey(passphrase) {
+  return crypto.createHash('sha256').update(String(passphrase)).digest(); // 32B
+}
+
+function encryptApiKey(plain) {
+  const k = encryptionKey();
+  if (!k || !plain || String(plain).startsWith(ENC_PREFIX)) return plain;
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', deriveKey(k), iv);
+  const ct = Buffer.concat([cipher.update(String(plain), 'utf8'), cipher.final()]);
+  return `${ENC_PREFIX}${iv.toString('base64url')}.${cipher.getAuthTag().toString('base64url')}.${ct.toString('base64url')}`;
+}
+
+function decryptApiKey(value) {
+  if (!value || !String(value).startsWith(ENC_PREFIX)) return value;
+  const k = encryptionKey();
+  if (!k) return ''; // 无密钥：调用方按空 Key 处理（上游返回鉴权失败，提示明确）
+  try {
+    const parts = String(value).slice(ENC_PREFIX.length).split('.');
+    if (parts.length !== 3) return '';
+    const decipher = crypto.createDecipheriv('aes-256-gcm', deriveKey(k), Buffer.from(parts[0], 'base64url'));
+    decipher.setAuthTag(Buffer.from(parts[1], 'base64url'));
+    return Buffer.concat([decipher.update(Buffer.from(parts[2], 'base64url')), decipher.final()]).toString('utf8');
+  } catch (_) {
+    return '';
+  }
+}
+
+let warnedMissingKey = false;
+/** 启动自检：库中存在加密 Key 但未提供 DB_ENCRYPT_KEY 时警告一次 */
+function checkEncryptionState() {
+  if (warnedMissingKey || encryptionKey()) return;
+  const hasEnc = db.load().configs.some((c) => typeof c.apiKey === 'string' && c.apiKey.startsWith(ENC_PREFIX));
+  if (hasEnc) {
+    warnedMissingKey = true;
+    console.warn('[config] 检测到已加密的 API Key，但未设置 DB_ENCRYPT_KEY——这些配置将无法调用上游，请在环境变量中提供同一把密钥。');
+  }
+}
 
 /**
  * 环境变量隐式配置的固定 ID。
@@ -25,12 +78,12 @@ function normalizeReasoningEffort(v) {
   return 'high';
 }
 
-// 返回给客户端的配置（API Key 脱敏）
+// 返回给客户端的配置（API Key 脱敏；加密存储的先解密再掩码）
 function sanitize(cfg) {
   if (!cfg) return cfg;
   return {
     ...cfg,
-    apiKey: maskKey(cfg.apiKey)
+    apiKey: maskKey(decryptApiKey(cfg.apiKey))
   };
 }
 
@@ -162,6 +215,7 @@ function fillFromEnv(cfg) {
   if (!cfg) return cfg;
   const out = { ...cfg };
   if (!out.apiKey) out.apiKey = env.getEnv('XFYUN_API_KEY') || env.getEnv('SPARK_API_PASSWORD') || '';
+  else out.apiKey = decryptApiKey(out.apiKey); // 加密存储的解密为明文再供调用
   if (!out.baseUrl) out.baseUrl = env.getEnv('XFYUN_BASE_URL') || out.baseUrl;
   if (!out.model) out.model = env.getEnv('XFYUN_MODEL') || out.model;
   return out;
@@ -242,7 +296,9 @@ function getSettings() {
       ? Math.floor(Number(s.cooldownSec))
       : 30,
     // 工作台访客密码保护开关（后台「工作台访问控制」维护）
-    workbenchAuthEnabled: !!s.workbenchAuthEnabled
+    workbenchAuthEnabled: !!s.workbenchAuthEnabled,
+    // 开放自助注册（P3：默认关闭；开启后 /team-login 出现注册入口，注册角色固定为 member）
+    allowSelfRegister: !!s.allowSelfRegister
   };
 }
 
@@ -266,6 +322,10 @@ function updateSettings(body) {
     }
     next.workbenchAuthEnabled = !!body.workbenchAuthEnabled;
   }
+  // —— 开放自助注册（P3）——
+  if (body.allowSelfRegister !== undefined) {
+    next.allowSelfRegister = !!body.allowSelfRegister;
+  }
   db.load().settings = { ...db.load().settings, ...next };
   db.save();
   return { ok: true, data: next };
@@ -279,6 +339,7 @@ function create(body) {
   cfg.active = data.configs.length === 0; // 首个配置自动设为激活
   cfg.createdAt = new Date().toISOString();
   cfg.updatedAt = cfg.createdAt;
+  cfg.apiKey = encryptApiKey(cfg.apiKey); // 设置 DB_ENCRYPT_KEY 时落库即加密
   data.configs.push(cfg);
   db.save();
   return { ok: true, data: sanitize(cfg) };
@@ -302,6 +363,7 @@ function update(id, body) {
   cfg.active = data.configs[idx].active;
   cfg.createdAt = data.configs[idx].createdAt;
   cfg.updatedAt = new Date().toISOString();
+  cfg.apiKey = encryptApiKey(cfg.apiKey); // 已是密文则原样保留（encryptApiKey 幂等）
   data.configs[idx] = cfg;
   db.save();
   return { ok: true, data: sanitize(cfg) };
@@ -340,5 +402,8 @@ module.exports = {
   create,
   update,
   remove,
-  activate
+  activate,
+  encryptApiKey,
+  decryptApiKey,
+  checkEncryptionState
 };

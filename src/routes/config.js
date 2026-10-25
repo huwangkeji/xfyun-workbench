@@ -4,6 +4,7 @@ const express = require('express');
 const configService = require('../configService');
 const xfyun = require('../xfyun');
 const logService = require('../logService');
+const auditService = require('../auditService');
 const asyncHandler = require('../asyncHandler');
 const router = express.Router();
 
@@ -12,6 +13,7 @@ const router = express.Router();
 router.post('/:id/test', asyncHandler(async (req, res) => {
   const cfg = configService.getFull(req.params.id);
   if (!cfg) return res.status(404).json({ ok: false, error: '配置不存在' });
+  auditService.log(req.user, auditService.ACTIONS.CONFIG_TEST, `config:${cfg.name}`, cfg.model, auditService.ipOf(req));
 
   const startedAt = Date.now();
   const result = await xfyun.chatCompletions(
@@ -23,6 +25,8 @@ router.post('/:id/test', asyncHandler(async (req, res) => {
   const entry = {
     id: logService.buildId(),
     time: new Date().toISOString(),
+    actorId: req.user ? req.user.id : null,
+    actorName: req.user ? req.user.displayName : '',
     configId: cfg.id,
     configName: cfg.name,
     model: cfg.model,
@@ -69,7 +73,16 @@ router.get('/settings', (req, res) => {
 });
 
 router.put('/settings', (req, res) => {
+  const before = configService.getSettings();
   const result = configService.updateSettings(req.body || {});
+  if (result.ok) {
+    const changes = [];
+    if (before.autoSwitch !== result.data.autoSwitch) changes.push(`自动切换 ${result.data.autoSwitch ? '开' : '关'}`);
+    if (before.cooldownSec !== result.data.cooldownSec) changes.push(`冷却 ${before.cooldownSec}s → ${result.data.cooldownSec}s`);
+    if (before.workbenchAuthEnabled !== result.data.workbenchAuthEnabled) changes.push(`访客密码保护 ${result.data.workbenchAuthEnabled ? '开' : '关'}`);
+    if (result.data.allowSelfRegister !== undefined && before.allowSelfRegister !== result.data.allowSelfRegister) changes.push(`开放注册 ${result.data.allowSelfRegister ? '开' : '关'}`);
+    auditService.log(req.user, auditService.ACTIONS.CONFIG_SETTINGS, 'settings', changes.join('；') || '无变化', auditService.ipOf(req));
+  }
   res.json(result);
 });
 
@@ -84,6 +97,7 @@ router.post('/', (req, res) => {
   if (!result.ok) {
     return res.status(400).json({ ok: false, errors: result.errors });
   }
+  auditService.log(req.user, auditService.ACTIONS.CONFIG_CREATE, `config:${result.data.name}`, result.data.model, auditService.ipOf(req));
   res.status(201).json({ ok: true, data: result.data });
 });
 
@@ -109,14 +123,17 @@ router.put('/:id', (req, res) => {
   if (envManagedGuard(result, res)) return;
   if (result.notFound) return res.status(404).json({ ok: false, error: '配置不存在' });
   if (!result.ok) return res.status(400).json({ ok: false, errors: result.errors });
+  auditService.log(req.user, auditService.ACTIONS.CONFIG_UPDATE, `config:${result.data.name}`, result.data.model, auditService.ipOf(req));
   res.json({ ok: true, data: result.data });
 });
 
 // 删除配置
 router.delete('/:id', (req, res) => {
+  const before = configService.get(req.params.id);
   const result = configService.remove(req.params.id);
   if (envManagedGuard(result, res)) return;
   if (result.notFound) return res.status(404).json({ ok: false, error: '配置不存在' });
+  auditService.log(req.user, auditService.ACTIONS.CONFIG_DELETE, `config:${before ? before.name : req.params.id}`, before ? before.model : '', auditService.ipOf(req));
   res.json({ ok: true });
 });
 
@@ -125,6 +142,7 @@ router.post('/:id/activate', (req, res) => {
   const result = configService.activate(req.params.id);
   if (envManagedGuard(result, res)) return;
   if (result.notFound) return res.status(404).json({ ok: false, error: '配置不存在' });
+  auditService.log(req.user, auditService.ACTIONS.CONFIG_ACTIVATE, `config:${result.data.name}`, result.data.model, auditService.ipOf(req));
   res.json({ ok: true, data: result.data });
 });
 

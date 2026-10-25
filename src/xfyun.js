@@ -89,6 +89,10 @@ const PARAM_MAP = [
 
 /**
  * 组装 chat/completions 请求体（流式与非流式共用，避免两处逻辑漂移）
+ *
+ * extra 与配置的优先级：extra 显式提供的值优先（含 false——前台"关闭深度思考"
+ * 必须能显式压过配置里的 true，否则上游收不到该字段会用默认值）。
+ * 配置值沿用旧规则：false 视为"未设置"不传，交由上游默认。
  */
 function buildChatBody(cfg, messages, extra = {}) {
   const body = {
@@ -97,14 +101,16 @@ function buildChatBody(cfg, messages, extra = {}) {
   };
 
   for (const { body: bodyKey, cfg: cfgKey } of PARAM_MAP) {
-    const val = extra[bodyKey] !== undefined ? extra[bodyKey] : cfg[cfgKey];
-    if (val !== null && val !== undefined && val !== '' && val !== false) {
-      body[bodyKey] = val;
-    }
+    const fromExtra = extra[bodyKey] !== undefined;
+    const val = fromExtra ? extra[bodyKey] : cfg[cfgKey];
+    if (val === null || val === undefined || val === '') continue;
+    // boolean false：仅 extra 显式提供时才下发（关闭开关）；配置里的 false 不传
+    if (val === false && !fromExtra) continue;
+    body[bodyKey] = val;
   }
 
   // 内置网络搜索工具（文档 §tools.type=web_search，tools[].web_search.enable）
-  // extra.webSearch 显式传入时覆盖配置默认值（前端「联网搜索」开关按次请求控制）
+  // extra.webSearch 显式传入时覆盖配置默认值（前台「联网搜索」开关按次请求控制）
   const webSearch = extra.webSearch !== undefined ? extra.webSearch : cfg.webSearch;
   if (webSearch) {
     body.tools = [{ type: 'web_search', web_search: { enable: true } }];

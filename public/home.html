@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>星火工作台 · 团队大模型协作门户</title>
+  <meta name="description" content="基于讯飞星辰 MaaS 的团队大模型对话工作台：多模型、多配置调度、图片理解、联网搜索、成员权限与数据隔离。" />
+  <link rel="stylesheet" href="/assets/style.css" />
+</head>
+<body class="lp">
+
+  <!-- 顶导航 -->
+  <header class="lp-nav">
+    <div class="lp-nav-inner">
+      <a class="lp-brand" href="/home">
+        <span class="logo">星</span>
+        <span class="lp-brand-name">星火工作台</span>
+        <span class="lp-brand-tag">团队版</span>
+      </a>
+      <nav class="lp-nav-links" id="lpNavLinks">
+        <a href="#features">功能特性</a>
+        <a href="#team">团队协作</a>
+        <a href="#security">安全管控</a>
+        <a href="#faq">常见问题</a>
+      </nav>
+      <div class="lp-nav-actions">
+        <!-- 未登录：登录 / 注册 -->
+        <a class="btn" id="navLoginBtn" href="/team-login">员工登录</a>
+        <a class="btn primary" id="navRegisterBtn" href="/team-login#register">注册账号</a>
+        <!-- 已登录：进入工作台 / 员工中心 -->
+        <a class="btn" id="navMeBtn" href="/me" style="display:none">员工中心</a>
+        <a class="btn primary" id="navEnterBtn" href="/" style="display:none">进入工作台</a>
+        <button class="lp-nav-toggle" id="lpNavToggle" aria-label="菜单">☰</button>
+      </div>
+    </div>
+  </header>
+
+  <!--  Hero  -->
+  <section class="lp-hero">
+    <div class="lp-hero-inner">
+      <div class="lp-hero-text">
+        <div class="lp-hero-badge">基于讯飞星辰 MaaS · 开源模型 API</div>
+        <h1>团队的大模型对话工作台<br /><span class="lp-hero-hl">安全 · 可控 · 可协作</span></h1>
+        <p>多模型对话、多 API 配置自动调度、图片理解、联网搜索；内置员工账号体系、四级角色权限、数据按人隔离与全量操作审计。私有部署，数据在手。</p>
+        <div class="lp-hero-cta">
+          <a class="btn primary lp-btn-lg" id="heroLoginBtn" href="/team-login">员工登录</a>
+          <a class="btn lp-btn-lg lp-btn-ghost" id="heroRegisterBtn" href="/team-login#register">注册账号</a>
+        </div>
+        <div class="lp-hero-note" id="lpRegisterNote" style="display:none">当前未开放自助注册，账号请联系管理员创建</div>
+        <div class="lp-hero-meta">
+          <span>零数据库依赖</span><span>私有化部署</span><span>操作留痕</span><span>角色权限</span>
+        </div>
+      </div>
+      <div class="lp-hero-visual" aria-hidden="true">
+        <div class="lp-mock">
+          <div class="lp-mock-bar"><i></i><i></i><i></i><span>星火工作台</span></div>
+          <div class="lp-mock-body">
+            <div class="lp-mock-msg user">帮我把这段会议纪要整理成三条待办</div>
+            <div class="lp-mock-msg ai">
+              <b>已整理：</b>
+              <ol>
+                <li>确认 Q4 模型选型（负责人：张三）</li>
+                <li>输出部署清单（负责人：李四）</li>
+                <li>安排安全评审（负责人：王五）</li>
+              </ol>
+            </div>
+            <div class="lp-mock-msg user">能联网核对下最新参数吗？</div>
+            <div class="lp-mock-msg ai short">已开启联网搜索，正在核对官方文档…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 功能特性 -->
+  <section class="lp-section" id="features">
+    <div class="lp-section-head">
+      <h2>功能特性</h2>
+      <p>开箱即用的对话工作台，覆盖团队日常使用场景</p>
+    </div>
+    <div class="lp-grid">
+      <div class="lp-card">
+        <div class="lp-card-icon">💬</div>
+        <h3>多模型对话</h3>
+        <p>支持多会话管理、流式输出、思考过程展示；参数（温度 / TopP / 思考强度 / 系统提示）随手可调。</p>
+      </div>
+      <div class="lp-card">
+        <div class="lp-card-icon">🔀</div>
+        <h3>多配置自动调度</h3>
+        <p>多个 API 配置按优先级自动切换，失败自动冷却重试；Key 用量与延迟一目了然。</p>
+      </div>
+      <div class="lp-card">
+        <div class="lp-card-icon">🖼️</div>
+        <h3>图片理解</h3>
+        <p>粘贴、拖拽、选择三种方式上传图片，多模态消息直接发给视觉模型，历史记录不膨胀。</p>
+      </div>
+      <div class="lp-card">
+        <div class="lp-card-icon">🌐</div>
+        <h3>联网搜索</h3>
+        <p>一键开关按次请求控制是否调用联网搜索，获取实时信息，回答不再过时。</p>
+      </div>
+      <div class="lp-card">
+        <div class="lp-card-icon">📊</div>
+        <h3>数据概览</h3>
+        <p>请求量、成功率、token 消耗、平均耗时、活跃成员，管理员一屏掌握团队使用情况。</p>
+      </div>
+      <div class="lp-card">
+        <div class="lp-card-icon">🧾</div>
+        <h3>记忆与导出</h3>
+        <p>会话记录关键字检索、管理员备注、JSON / Markdown 导出，重要对话不丢失。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 团队协作 -->
+  <section class="lp-section lp-section-alt" id="team">
+    <div class="lp-section-head">
+      <h2>团队协作</h2>
+      <p>四级角色权限，数据按人隔离，成员即开即用</p>
+    </div>
+    <div class="lp-grid lp-grid-4">
+      <div class="lp-card lp-role">
+        <h3>超级管理员 <span class="lp-role-tag">owner</span></h3>
+        <p>唯一最高权限：管理一切账号与配置，可转让。</p>
+      </div>
+      <div class="lp-card lp-role">
+        <h3>管理员 <span class="lp-role-tag">admin</span></h3>
+        <p>维护 API 配置、成员账号、查看全部日志与审计。</p>
+      </div>
+      <div class="lp-card lp-role">
+        <h3>成员 <span class="lp-role-tag">member</span></h3>
+        <p>使用工作台对话，查看自己的会话、日志与数据。</p>
+      </div>
+      <div class="lp-card lp-role">
+        <h3>只读成员 <span class="lp-role-tag">viewer</span></h3>
+        <p>仅查看数据概览，不能发起对话，适合观察与监督场景。</p>
+      </div>
+    </div>
+    <div class="lp-strip">
+      <div class="lp-strip-item"><b>账号启停</b><span>停用即禁登录，历史数据完整保留</span></div>
+      <div class="lp-strip-item"><b>改密安全</b><span>scrypt 哈希存储，改密只失效本人会话</span></div>
+      <div class="lp-strip-item"><b>登录防护</b><span>IP 与账号双维度限流，失败不暴露账号存在性</span></div>
+      <div class="lp-strip-item"><b>员工中心</b><span>个人数据、登录记录、自助改密一页搞定</span></div>
+    </div>
+  </section>
+
+  <!-- 安全管控 -->
+  <section class="lp-section" id="security">
+    <div class="lp-section-head">
+      <h2>安全管控</h2>
+      <p>为团队数据画的每一条红线</p>
+    </div>
+    <div class="lp-grid lp-grid-2">
+      <div class="lp-card lp-card-row">
+        <h3>操作留痕</h3>
+        <p>登录成败、账号变更、配置变更、数据删除全部记录，最近 2000 条随时可查。</p>
+      </div>
+      <div class="lp-card lp-card-row">
+        <h3>数据隔离</h3>
+        <p>会话与日志按归属人隔离：成员只看自己的，管理员看全部，访客只见访客桶。</p>
+      </div>
+      <div class="lp-card lp-card-row">
+        <h3>密钥安全</h3>
+        <p>API Key 仅从环境变量或后台读取，可选 AES-256-GCM 加密落库，源码零硬编码。</p>
+      </div>
+      <div class="lp-card lp-card-row">
+        <h3>稳定写入</h3>
+        <p>数据文件原子写入，进程中断不损坏；单文件备份，迁移就是拷一个文件。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 底部 CTA -->
+  <section class="lp-cta" id="faq">
+    <div class="lp-cta-inner">
+      <h2>准备好开始了吗？</h2>
+      <p>使用你的员工账号登录，或联系管理员开通账号。忘记密码可让管理员重置。</p>
+      <div class="lp-hero-cta">
+        <a class="btn primary lp-btn-lg" id="ctaLoginBtn" href="/team-login">员工登录</a>
+        <a class="btn lp-btn-lg lp-btn-ghost" id="ctaRegisterBtn" href="/team-login#register">注册账号</a>
+      </div>
+      <div class="lp-faq">
+        <details>
+          <summary>没有账号怎么办？</summary>
+          <p>账号由管理员在后台「成员管理」创建；若站点开放了自助注册，登录页会出现注册入口。</p>
+        </details>
+        <details>
+          <summary>忘记密码怎么办？</summary>
+          <p>联系管理员在「成员管理」中重置密码，会生成临时密码，下次登录需改密。</p>
+        </details>
+        <details>
+          <summary>数据存放在哪里？</summary>
+          <p>全部数据保存在服务器本地单文件中，私有部署，备份即拷贝该文件。</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <footer class="lp-footer">
+    <div class="lp-footer-inner">
+      <div class="lp-footer-brand">
+        <span class="logo">星</span>
+        <div>
+          <b>星火工作台 · 团队版</b>
+          <span>基于讯飞星辰 MaaS 开源模型 API</span>
+        </div>
+      </div>
+      <div class="lp-footer-links">
+        <a href="/team-login">员工登录</a>
+        <a href="/team-login#register">注册账号</a>
+        <a href="/">工作台</a>
+        <a href="/admin">后台管理</a>
+      </div>
+      <div class="lp-footer-note">由 沧州虎王科技 开发 · Node.js + Express 私有部署</div>
+    </div>
+  </footer>
+
+  <script src="/assets/home.js"></script>
+</body>
+</html>

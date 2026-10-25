@@ -6,23 +6,31 @@
   <title>星火工作台 · 文本对话</title>
   <link rel="stylesheet" href="/assets/style.css" />
 </head>
-<body>
+<body class="wb-page">
   <header class="topbar">
     <div class="brand">
       <div class="logo">星</div>
-      <span>星火 MaaS 文本对话工作台</span>
-      <span class="tag">开源模型 · OpenAI Chat</span>
+      <span class="brand-title">星火 MaaS 文本对话工作台</span>
+      <span class="tag">沧州虎王科技V2</span>
     </div>
     <div class="top-actions">
-      <button class="btn" id="wbLogoutBtn" style="display:none" title="退出工作台登录">退出登录</button>
+      <a class="btn" href="/home" title="返回门户首页">首页</a>
+      <span class="tag" id="teamUserTag" style="display:none"></span>
+      <a class="btn" id="meCenterBtn" href="/me" style="display:none" title="个人信息 / 我的数据 / 登录记录">员工中心</a>
+      <button class="btn" id="teamLogoutBtn" style="display:none" title="退出员工账号登录">退出登录</button>
+      <button class="btn" id="wbLogoutBtn" style="display:none" title="退出工作台登录">访客退出</button>
       <button class="btn" id="clearChatBtn">清空本会话</button>
-      <a class="btn" href="/admin">后台管理</a>
+      <a class="btn" href="/admin" id="adminLink">后台管理</a>
     </div>
   </header>
 
   <div class="workbench">
-    <!-- 侧边栏：配置 / 会话 -->
-    <aside class="sidebar">
+    <!-- 侧边栏：配置 / 会话（移动端为抽屉，由 chat-head 的 ☰ 唤出） -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-head-mobile">
+        <span>配置与会话</span>
+        <button class="btn btn-sm" id="sidebarCloseBtn">收起</button>
+      </div>
       <h3>选中的 API 配置</h3>
       <select class="select tail-select" id="configSelect"></select>
 
@@ -33,20 +41,54 @@
       </div>
       <div id="convList"></div>
     </aside>
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
 
     <!-- 聊天区 -->
     <section class="chat-area">
       <div class="chat-head">
-        <div id="curConfigName" style="font-weight:600">未选择配置</div>
+        <button class="btn btn-sm sidebar-toggle" id="sidebarToggle" title="配置与会话">☰</button>
+        <div id="curConfigName" class="cur-config-name">未选择配置</div>
         <div class="chat-head-right">
-          <button class="btn btn-sm" id="webSearchBtn" title="开启后本次对话允许模型调用联网搜索获取实时信息（星火 MaaS web_search 工具）">🌐 联网搜索</button>
           <div id="statusLine" class="typing"></div>
+          <button class="btn btn-sm" id="shareBtn" title="把当前对话生成只读链接分享出去">🔗 分享对话</button>
         </div>
       </div>
 
       <div class="chat-messages" id="messages"></div>
 
       <div class="chat-input" id="chatInput">
+        <!-- 参数工具栏：深度思考 / 思考强度 / 联网搜索 / 系统提示 -->
+        <div class="params-bar" id="paramsBar">
+          <button class="param-toggle" id="thinkingBtn" title="开启后模型进行深度思考（推理更充分，耗时更长）">
+            <span class="dot"></span>🧠 深度思考
+          </button>
+          <label class="param-select" id="effortLabel" title="思考强度：high 均衡 / max 最强（耗时更长）">
+            强度
+            <select id="effortSelect">
+              <option value="high">high</option>
+              <option value="max">max</option>
+            </select>
+          </label>
+          <button class="param-toggle" id="webSearchBtn" title="允许模型调用联网搜索获取实时信息">
+            <span class="dot"></span>🌐 联网搜索
+          </button>
+          <span class="params-spacer"></span>
+          <button class="param-btn" id="promptBtn" title="自定义系统提示（留空则使用配置中的默认值）">📝 系统提示</button>
+        </div>
+        <!-- 系统提示编辑面板 -->
+        <div class="prompt-panel" id="promptPanel" style="display:none">
+          <div class="prompt-head">
+            <span>系统提示（System Prompt）</span>
+            <span class="prompt-tip">留空则使用当前 API 配置里的默认系统提示</span>
+          </div>
+          <textarea id="promptInput" rows="3" placeholder="例如：你是一名资深前端工程师，回答简洁、给代码示例…"></textarea>
+          <div class="prompt-actions">
+            <span id="promptCount">0 字</span>
+            <span class="params-spacer"></span>
+            <button class="btn btn-sm" id="promptResetBtn">恢复配置默认</button>
+            <button class="btn btn-sm primary" id="promptSaveBtn">收起</button>
+          </div>
+        </div>
         <div class="attach-row" id="attachRow" style="display:none"></div>
         <div class="wrap">
           <textarea id="input" placeholder="输入问题，Enter 发送 / Shift+Enter 换行；支持 Ctrl+V 粘贴或拖入图片（PNG/JPEG/GIF/WebP，单张≤8MB，最多9张）" rows="1"></textarea>
@@ -55,7 +97,7 @@
             <button class="btn primary" id="sendBtn">发送</button>
           </div>
         </div>
-        <div class="attach-hint">💡 粘贴/拖入的图片会先上传到本机 public/uploads，随消息一起发给模型；历史消息中的图片以缩略图展示。联网搜索开关对当次会话生效（记住选择）。</div>
+        <div class="attach-hint">💡 上方工具栏可临时调整本次会话的思考/联网参数（记住选择）；系统提示会随每条请求一起发送。</div>
         <input type="file" id="fileInput" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden />
       </div>
     </section>
@@ -63,6 +105,41 @@
 
   <div class="toast-wrap" id="toastWrap"></div>
 
+  <!-- 分享对话弹层 -->
+  <div class="modal-mask" id="shareModal" style="display:none">
+    <div class="modal">
+      <div class="modal-head">
+        <span>🔗 分享对话</span>
+        <button class="close-x" id="shareModalClose">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="share-tip">生成只读链接：任何人凭链接可查看当前对话的<b>快照内容</b>（分享后继续对话不会影响已发出的链接）。</div>
+        <div class="share-create-row">
+          <label class="param-select" title="链接有效期，到期后自动失效">
+            有效期
+            <select id="shareExpiry">
+              <option value="7">7 天</option>
+              <option value="30" selected>30 天</option>
+              <option value="90">90 天</option>
+              <option value="0">永久</option>
+            </select>
+          </label>
+          <button class="btn primary" id="shareCreateBtn">生成分享链接</button>
+        </div>
+        <div class="share-link-box" id="shareLinkBox" style="display:none">
+          <input class="input" id="shareLinkInput" readonly />
+          <button class="btn" id="shareLinkCopyBtn">复制链接</button>
+        </div>
+        <h4 class="share-list-title">已创建的分享</h4>
+        <div id="shareList" class="share-list"></div>
+      </div>
+      <div class="modal-foot">
+        <span class="share-foot-note">链接含随机凭证，请只分享给可信的人；发现泄露可在此撤销。</span>
+      </div>
+    </div>
+  </div>
+
+  <script src="/assets/markdown.js"></script>
   <script src="/assets/app.js"></script>
 </body>
 </html>

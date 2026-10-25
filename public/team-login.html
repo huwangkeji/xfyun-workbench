@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>员工登录 · 星火工作台</title>
+  <link rel="stylesheet" href="/assets/style.css" />
+</head>
+<body>
+  <div class="login-wrap">
+    <!-- 登录表单 -->
+    <form class="login-card" id="loginForm" autocomplete="off">
+      <div class="login-brand">
+        <div class="logo">星</div>
+        <div class="t">星火工作台 · 员工登录</div>
+        <div class="s">团队账号体系 · 数据按角色隔离</div>
+      </div>
+
+      <div class="login-hint" id="initHint" style="display:none">
+        当前初始管理员账号（<b>owner</b>）仍在使用初始密码，登录后请立即修改。
+      </div>
+      <div class="login-err" id="loginErr"></div>
+
+      <label class="field">
+        <span>用户名</span>
+        <input class="input" id="username" type="text" placeholder="请输入用户名" autocomplete="username" autofocus />
+      </label>
+      <label class="field">
+        <span>密码</span>
+        <input class="input" id="pwd" type="password" placeholder="请输入密码" autocomplete="current-password" />
+      </label>
+      <button class="btn primary login-btn" id="loginBtn" type="submit">登 录</button>
+
+      <div class="login-foot">
+        <a href="/home">← 返回首页</a><br/>
+        账号由管理员创建；如遇登录问题请联系管理员<br/>
+        <a href="#" id="showRegisterLink" style="display:none">没有账号？注册新账号 →</a>
+      </div>
+    </form>
+
+    <!-- 自助注册面板（仅管理员开放注册后显示） -->
+    <form class="login-card" id="registerForm" style="display:none">
+      <div class="login-brand">
+        <div class="logo">注</div>
+        <div class="t">注册新账号</div>
+        <div class="s">注册角色为成员</div>
+      </div>
+
+      <div class="login-hint" show>
+        用户名将作为登录名，注册后自动登录。密码至少 8 位，须同时包含字母和数字。
+      </div>
+      <div class="login-err" id="registerErr"></div>
+
+      <label class="field">
+        <span>用户名（3-20 位小写字母 / 数字 / 下划线）</span>
+        <input class="input" id="r_username" type="text" placeholder="如 zhangsan" autocomplete="username" />
+      </label>
+      <label class="field">
+        <span>昵称</span>
+        <input class="input" id="r_displayName" type="text" placeholder="如 张三" />
+      </label>
+      <label class="field">
+        <span>密码（至少 8 位，须含字母和数字）</span>
+        <input class="input" id="r_pwd1" type="password" placeholder="请输入密码" autocomplete="new-password" />
+      </label>
+      <label class="field">
+        <span>确认密码</span>
+        <input class="input" id="r_pwd2" type="password" placeholder="再次输入密码" autocomplete="new-password" />
+      </label>
+      <button class="btn primary login-btn" id="registerBtn" type="submit">注 册 并 登 录</button>
+
+      <div class="login-foot">
+        <a href="#" id="backToLogin2">← 返回登录</a>
+      </div>
+    </form>
+
+    <!-- 首次登录 / 强制改密面板 -->
+    <form class="login-card" id="changePwdForm" style="display:none">
+      <div class="login-brand">
+        <div class="logo">密</div>
+        <div class="t">设置新密码</div>
+        <div class="s">为了账号安全，请先修改密码</div>
+      </div>
+
+      <div class="login-hint" show>
+        当前使用的是初始或临时密码，通过校验后即可进入工作台。
+      </div>
+      <div class="login-err" id="changeErr"></div>
+
+      <label class="field">
+        <span>当前密码</span>
+        <input class="input" id="c_old" type="password" placeholder="请输入当前密码" autocomplete="current-password" />
+      </label>
+      <label class="field">
+        <span>新密码（至少 8 位，须含字母和数字）</span>
+        <input class="input" id="c_new1" type="password" placeholder="请输入新密码" autocomplete="new-password" />
+      </label>
+      <label class="field">
+        <span>确认新密码</span>
+        <input class="input" id="c_new2" type="password" placeholder="再次输入新密码" autocomplete="new-password" />
+      </label>
+      <button class="btn primary login-btn" id="changeBtn" type="submit">保存并重新登录</button>
+
+      <div class="login-foot">
+        <a href="#" id="backToLogin">← 返回登录</a>
+      </div>
+    </form>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+      var loginForm = document.getElementById('loginForm');
+      var changeForm = document.getElementById('changePwdForm');
+      var usernameEl = document.getElementById('username');
+      var pwdEl = document.getElementById('pwd');
+      var err = document.getElementById('loginErr');
+      var changeErr = document.getElementById('changeErr');
+      var btn = document.getElementById('loginBtn');
+      var lastUsername = '';
+
+      function showErr(msg) { err.textContent = msg; err.classList.add('show'); }
+      function hideErr() { err.classList.remove('show'); }
+      function showChangeErr(msg) { changeErr.textContent = msg; changeErr.classList.add('show'); }
+      function hideChangeErr() { changeErr.classList.remove('show'); }
+
+      // 登录页状态：owner 是否仍是初始密码（无需登录的探测接口）
+      var selfRegisterOn = false;
+      fetch('/api/auth/setup-status')
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d && d.ok && d.data && d.data.ownerMustChangePassword) {
+            document.getElementById('initHint').style.display = '';
+          }
+          // 开放注册开关（默认关）
+          if (d && d.ok && d.data && d.data.selfRegisterEnabled) {
+            selfRegisterOn = true;
+            document.getElementById('showRegisterLink').style.display = '';
+          }
+          // 门户「注册账号」按钮带 #register 锚点直达：开放则展开注册面板，否则给明确提示
+          if (location.hash === '#register') {
+            if (selfRegisterOn) {
+              document.getElementById('showRegisterLink').click();
+            } else {
+              showErr('本站未开放自助注册，请联系管理员创建账号');
+            }
+          }
+        })
+        .catch(function () { /* 服务未启动时静默，登录时自然报错 */ });
+
+      function switchPanel(toChange) {
+        loginForm.style.display = toChange ? 'none' : '';
+        changeForm.style.display = toChange ? '' : 'none';
+        (toChange ? document.getElementById('c_old') : usernameEl).focus();
+      }
+
+      document.getElementById('backToLogin').addEventListener('click', function (e) {
+        e.preventDefault();
+        switchPanel(false);
+      });
+
+      // 注册入口 / 返回
+      document.getElementById('showRegisterLink').addEventListener('click', function (e) {
+        e.preventDefault();
+        loginForm.style.display = 'none';
+        changeForm.style.display = 'none';
+        registerForm.style.display = '';
+        document.getElementById('r_username').focus();
+      });
+      document.getElementById('backToLogin2').addEventListener('click', function (e) {
+        e.preventDefault();
+        registerForm.style.display = 'none';
+        switchPanel(false);
+      });
+
+      // 注册并自动登录
+      registerForm.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        var regErr = document.getElementById('registerErr');
+        function showRegErr(msg) { regErr.textContent = msg; regErr.classList.add('show'); }
+        function hideRegErr() { regErr.classList.remove('show'); }
+        hideRegErr();
+        var username = document.getElementById('r_username').value.trim();
+        var displayName = document.getElementById('r_displayName').value.trim();
+        var p1 = document.getElementById('r_pwd1').value;
+        var p2 = document.getElementById('r_pwd2').value;
+        if (!username) { showRegErr('请输入用户名'); return; }
+        if (!displayName) { showRegErr('请输入昵称'); return; }
+        if (p1.length < 8) { showRegErr('密码至少 8 位'); return; }
+        if (!/[A-Za-z]/.test(p1) || !/\d/.test(p1)) { showRegErr('密码须同时包含字母和数字'); return; }
+        if (p1 !== p2) { showRegErr('两次输入的密码不一致'); return; }
+        var rBtn = document.getElementById('registerBtn');
+        rBtn.disabled = true;
+        rBtn.textContent = '注册中…';
+        try {
+          var resp = await fetch('/api/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: username, displayName: displayName, password: p1 })
+          });
+          var data = await resp.json().catch(function () { return {}; });
+          if (resp.ok && data.ok) {
+            location.replace('/');
+            return;
+          }
+          showRegErr(data.error || ('注册失败（HTTP ' + resp.status + '）'));
+        } catch (e2) {
+          showRegErr('无法连接后端服务，请确认服务已启动');
+        } finally {
+          rBtn.disabled = false;
+          rBtn.textContent = '注 册 并 登 录';
+        }
+      });
+
+      // 登录：用户名 + 密码
+      loginForm.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        hideErr();
+        var username = usernameEl.value.trim();
+        var password = pwdEl.value;
+        if (!username) { showErr('请输入用户名'); return; }
+        if (!password) { showErr('请输入密码'); return; }
+        btn.disabled = true;
+        btn.textContent = '登录中…';
+        try {
+          var resp = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: username, password: password })
+          });
+          var data = await resp.json().catch(function () { return {}; });
+          if (resp.ok && data.ok) {
+            lastUsername = username;
+            if (data.data && data.data.mustChangePassword) {
+              // 初始/临时密码：先过改密流程
+              document.getElementById('c_old').value = password;
+              document.getElementById('c_new1').value = '';
+              document.getElementById('c_new2').value = '';
+              switchPanel(true);
+              return;
+            }
+            location.replace('/');
+            return;
+          }
+          showErr(data.error || ('登录失败（HTTP ' + resp.status + '）'));
+        } catch (e2) {
+          showErr('无法连接后端服务，请确认服务已启动（默认 http://127.0.0.1:4000）');
+        } finally {
+          btn.disabled = false;
+          btn.textContent = '登 录';
+        }
+      });
+
+      // 改密：通过后用新密码重新登录
+      changeForm.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        hideChangeErr();
+        var oldPwd = document.getElementById('c_old').value;
+        var n1 = document.getElementById('c_new1').value;
+        var n2 = document.getElementById('c_new2').value;
+        if (!oldPwd) { showChangeErr('请输入当前密码'); return; }
+        if (n1.length < 8) { showChangeErr('新密码至少 8 位'); return; }
+        if (!/[A-Za-z]/.test(n1) || !/\d/.test(n1)) { showChangeErr('新密码须同时包含字母和数字'); return; }
+        if (n1 !== n2) { showChangeErr('两次输入的新密码不一致'); return; }
+        var cBtn = document.getElementById('changeBtn');
+        cBtn.disabled = true;
+        cBtn.textContent = '保存中…';
+        try {
+          var resp = await fetch('/api/auth/password', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ currentPassword: oldPwd, newPassword: n1 })
+          });
+          var data = await resp.json().catch(function () { return {}; });
+          if (resp.ok && data.ok) {
+            // 服务端已清除会话：回到登录页，用新密码登录
+            switchPanel(false);
+            pwdEl.value = '';
+            showErr('密码已修改，请使用新密码重新登录');
+            return;
+          }
+          showChangeErr(data.error || ('修改失败（HTTP ' + resp.status + '）'));
+        } catch (e2) {
+          showChangeErr('无法连接后端服务，请确认服务已启动');
+        } finally {
+          cBtn.disabled = false;
+          cBtn.textContent = '保存并重新登录';
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

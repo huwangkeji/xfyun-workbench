@@ -83,11 +83,15 @@ function validateMessages(messages) {
 }
 
 // 按配置注入系统提示（已有 system 消息则不重复注入）
-function withSystemPrompt(messages, cfg) {
+// customSystemPrompt：前台「系统提示」输入框的值（字符串）——显式提供时覆盖配置默认；
+//   空串表示用户清空（不注入）；undefined 表示前台未传，回退配置值。
+function withSystemPrompt(messages, cfg, customSystemPrompt) {
   const list = messages.slice();
-  if (cfg && cfg.systemPrompt && !list.some((m) => m.role === 'system')) {
-    list.unshift({ role: 'system', content: cfg.systemPrompt });
-  }
+  if (list.some((m) => m.role === 'system')) return list;
+  const sp = customSystemPrompt !== undefined && customSystemPrompt !== null
+    ? String(customSystemPrompt)
+    : (cfg && cfg.systemPrompt);
+  if (sp) list.unshift({ role: 'system', content: sp });
   return list;
 }
 
@@ -99,6 +103,12 @@ function withSystemPrompt(messages, cfg) {
  */
 router.post('/', asyncHandler(async (req, res) => {
   const body = req.body || {};
+  // 操作者身份（P2：日志按角色可见；未登录访客为 null，仅管理员可见其记录）
+  const actor = req.user || null;
+  // 权限矩阵：viewer 为只读角色，不开放对话（工作台界面也会禁用发送）
+  if (actor && actor.role === 'viewer') {
+    return res.status(403).json({ ok: false, code: 'FORBIDDEN', error: '只读成员（viewer）不能发起对话，如需使用请联系管理员调整角色' });
+  }
   const msgErr = validateMessages(body.messages);
   if (msgErr) {
     return res.status(400).json({ ok: false, error: msgErr });
@@ -109,12 +119,17 @@ router.post('/', asyncHandler(async (req, res) => {
     temperature: body.temperature,
     top_p: body.topP,
     max_completion_tokens: body.maxTokens,
+    // 前台参数工具栏：深度思考开关 / 思考强度（显式 boolean 与字符串优先，未传回退配置）
+    enable_thinking: typeof body.enableThinking === 'boolean' ? body.enableThinking : undefined,
+    reasoning_effort: body.reasoningEffort === 'high' || body.reasoningEffort === 'max' ? body.reasoningEffort : undefined,
     // 联网搜索：前端开关按次显式传入 boolean；未传（undefined）时回退配置默认值
     webSearch: typeof body.webSearch === 'boolean' ? body.webSearch : undefined,
     // stream 只由请求体显式开启：配置里的 stream 字段不参与决定，
     // 避免后台误开流式后浏览器 UI（不消费 SSE）拿到 event-stream 而无法解析。
     stream: false
   };
+  // 前台「系统提示」输入框：字符串则覆盖配置默认（空串=不注入），undefined 则用配置值
+  const customSystemPrompt = typeof body.systemPrompt === 'string' ? body.systemPrompt : undefined;
 
   // 系统提示注入由各配置的 systemPrompt 决定；为统一处理，先取原始消息
   const rawMessages = Array.isArray(body.messages) ? body.messages.slice() : [];
@@ -129,12 +144,14 @@ router.post('/', asyncHandler(async (req, res) => {
 
   /* ---------- 流式（SSE）分支：仅显式配置 ---------- */
   if (explicitCfg && wantStream) {
-    const messages = withSystemPrompt(upstreamMessages, explicitCfg);
+    const messages = withSystemPrompt(upstreamMessages, explicitCfg, customSystemPrompt);
     const streamResult = await xfyun.chatCompletionsStream(explicitCfg, messages, { ...extra, stream: true });
 
     const streamEntry = {
       id: logService.buildId(),
       time: new Date().toISOString(),
+      actorId: actor ? actor.id : null,
+      actorName: actor ? actor.displayName : '',
       configId: explicitCfg.id,
       configName: explicitCfg.name,
       model: explicitCfg.model,
@@ -189,14 +206,16 @@ router.post('/', asyncHandler(async (req, res) => {
 
   if (explicitCfg) {
     // 显式指定配置：直接使用该配置（不走调度器）
-    const messages = withSystemPrompt(upstreamMessages, explicitCfg);
+    const messages = withSystemPrompt(upstreamMessages, explicitCfg, customSystemPrompt);
     callResult = await xfyun.chatCompletions(explicitCfg, messages, extra);
     callResult.usedConfig = explicitCfg;
     callResult.attempts = [{ id: explicitCfg.id, name: explicitCfg.name, model: explicitCfg.model, ok: callResult.ok, status: callResult.status }];
   } else {
     // 未指定：走调度器自动切换（当前配置 token 耗尽等失败时自动换下一个）
     // 注意：调度路径恒为非流式（failover 与 SSE 语义互斥），wantStream 在此被忽略
-    callResult = await scheduler.attemptChat(upstreamMessages, extra);
+    // 系统提示用前台覆盖值，否则用当前激活配置的值
+    const schedMessages = withSystemPrompt(upstreamMessages, configService.getActive(), customSystemPrompt);
+    callResult = await scheduler.attemptChat(schedMessages, extra);
     usedCfg = callResult.usedConfig || null;
     // 记录日志需要的配置对象：优先用实际生效的，否则用第一个启用配置
     if (!usedCfg) {
@@ -217,15 +236,22 @@ router.post('/', asyncHandler(async (req, res) => {
   // 注入系统提示到日志/最终消息（用于展示）；日志用脱敏版（base64 图片换成摘要）
   let messages = redactForLog(upstreamMessages);
   if (cfg && cfg.systemPrompt && !messages.some((m) => m.role === 'system')) {
+    // 调度路径的场景：上面已按激活配置注入，这里仅补齐展示
     messages.unshift({ role: 'system', content: cfg.systemPrompt });
+  } else if (customSystemPrompt && !messages.some((m) => m.role === 'system')) {
+    messages.unshift({ role: 'system', content: customSystemPrompt });
   }
-  // 本次请求实际生效的联网开关（前端显式值优先，否则取配置默认）
+  // 本次请求实际生效的参数（前端显式值优先，否则取配置默认）
   const effectiveWebSearch = extra.webSearch !== undefined ? extra.webSearch : !!(cfg && cfg.webSearch);
+  const effectiveThinking = extra.enable_thinking !== undefined ? extra.enable_thinking : !!(cfg && cfg.enableThinking);
+  const effectiveEffort = extra.reasoning_effort || (cfg && cfg.reasoningEffort) || null;
 
   // 记录日志
   const entry = {
     id: logService.buildId(),
     time: new Date().toISOString(),
+    actorId: actor ? actor.id : null,
+    actorName: actor ? actor.displayName : '',
     configId: cfg ? cfg.id : null,
     configName: cfg ? cfg.name : '',
     model: cfg ? cfg.model : '',
@@ -240,6 +266,8 @@ router.post('/', asyncHandler(async (req, res) => {
       frequencyPenalty: (cfg && cfg.frequencyPenalty) ?? 0,
       systemPrompt: (cfg && cfg.systemPrompt) || '',
       webSearch: effectiveWebSearch,
+      enableThinking: effectiveThinking,
+      reasoningEffort: effectiveEffort,
       imagesInlined: inlinedCount
     }
   };

@@ -13,8 +13,10 @@
       <span>星火工作台 · 后台管理</span>
     </div>
     <div class="top-actions">
-      <button class="btn" id="changePwdBtn" title="修改后台管理密码">修改密码</button>
-      <button class="btn" id="logoutBtn" title="退出后台管理登录">退出登录</button>
+      <span class="tag" id="currentUser"></span>
+      <button class="btn" id="myLoginsBtn" title="查看我的登录记录">我的登录记录</button>
+      <button class="btn" id="changePwdBtn" title="修改登录密码">修改密码</button>
+      <button class="btn" id="logoutBtn" title="退出登录">退出登录</button>
       <a class="btn" href="/">返回工作台</a>
     </div>
   </header>
@@ -25,6 +27,8 @@
       <button class="tab-btn" data-tab="logs">运行日志 <span id="logCountBadge" class="badge" style="margin-left:4px">0</span></button>
       <button class="tab-btn" data-tab="network">云中心延时</button>
       <button class="tab-btn" data-tab="memory">记忆管理</button>
+      <button class="tab-btn" data-tab="users">成员管理</button>
+      <button class="tab-btn" data-tab="audit">审计日志</button>
     </div>
 
     <!-- API 配置 -->
@@ -82,6 +86,19 @@
           <option value="ok">成功 (ok)</option>
           <option value="error">失败 (error)</option>
         </select>
+        <input class="input" id="logKeyword" placeholder="搜索问题 / 回复 / 错误" style="max-width:200px" />
+        <select class="select" id="logModelFilter" style="width:auto">
+          <option value="">全部模型</option>
+        </select>
+        <input class="input" id="logDateFrom" type="date" style="width:auto" title="开始日期" />
+        <span class="hint">至</span>
+        <input class="input" id="logDateTo" type="date" style="width:auto" title="结束日期" />
+        <select class="select" id="logSort" style="width:auto">
+          <option value="time_desc">时间 ↓</option>
+          <option value="time_asc">时间 ↑</option>
+          <option value="latencyMs_desc">耗时 ↓</option>
+          <option value="totalTokens_desc">Tokens ↓</option>
+        </select>
         <button class="btn" id="refreshLogsBtn">刷新</button>
         <span class="spacer"></span>
         <span class="btn danger" id="clearLogsBtn">清空日志</span>
@@ -128,11 +145,17 @@
     <!-- 记忆管理 · 会话记录 -->
     <div class="tab-pane" id="pane-memory">
       <div class="card">
-        <div class="card-title">记忆管理 · 会话记录</div>
-        <div class="hint">汇总工作台产生的全部会话记录：可关键字搜索（标题 / 备注 / 消息内容）、查看完整对话、添加<b>管理员备注</b>（仅后台可见，用于记录运营备忘），并支持导出（JSON / Markdown）与删除。</div>
+        <div class="card-title">数据概览</div>
+        <div class="ov-cards" id="overviewCards"></div>
+
+        <div class="card-title" style="margin-top:20px">记忆管理 · 会话记录</div>
+        <div class="hint">汇总工作台产生的全部会话记录：可关键字搜索（标题 / 备注 / 消息内容）、按成员筛选、查看完整对话、添加<b>管理员备注</b>（仅后台可见，用于记录运营备忘），并支持导出（JSON / Markdown）与删除。</div>
         <div class="mem-stats" id="memStats"></div>
         <div class="toolbar">
-          <input class="input" id="memKeyword" placeholder="搜索标题 / 备注 / 消息内容，回车搜索" style="max-width:340px" />
+          <input class="input" id="memKeyword" placeholder="搜索标题 / 备注 / 消息内容，回车搜索" style="max-width:300px" />
+          <select class="select" id="memOwnerFilter" style="width:auto">
+            <option value="">全部成员</option>
+          </select>
           <button class="btn primary" id="memSearchBtn">搜索</button>
           <button class="btn" id="memResetBtn">重置</button>
           <span class="spacer"></span>
@@ -142,7 +165,7 @@
           <table>
             <thead>
               <tr>
-                <th>标题</th><th>消息数</th><th>管理员备注</th><th>创建时间</th><th>更新时间</th><th>操作</th>
+                <th>标题</th><th>归属</th><th>消息数</th><th>管理员备注</th><th>创建时间</th><th>更新时间</th><th>操作</th>
               </tr>
             </thead>
             <tbody id="memRows"></tbody>
@@ -152,6 +175,61 @@
           <button class="btn" id="memPrevBtn">上一页</button>
           <span id="memPageInfo">第 1 页</span>
           <button class="btn" id="memNextBtn">下一页</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 成员管理 -->
+    <div class="tab-pane" id="pane-users">
+      <div class="card">
+        <div class="card-title">成员管理</div>
+        <div class="hint">创建 / 停用员工账号。<b>停用后该账号立即无法登录，历史数据完整保留</b>，重新启用后数据原样可见。仅 owner 可管理 admin 级别账号；不能停用自己或修改自己的角色。</div>
+        <div class="toolbar">
+          <button class="btn primary" id="addUserBtn">+ 新增成员</button>
+          <span class="spacer"></span>
+          <button class="btn" id="refreshUsersBtn">刷新</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>用户名</th><th>昵称</th><th>角色</th><th>状态</th><th>最近登录</th><th>创建时间</th><th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="userRows"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 审计日志 -->
+    <div class="tab-pane" id="pane-audit">
+      <div class="card">
+        <div class="card-title">审计日志</div>
+        <div class="hint">记录登录成败、账号变更、配置变更、数据删除等关键操作（环形缓冲保留最近 2000 条）。</div>
+        <div class="toolbar">
+          <select class="select" id="auditActionFilter" style="width:auto">
+            <option value="">全部操作</option>
+          </select>
+          <input class="input" id="auditKeyword" placeholder="搜索操作人 / 对象 / 明细" style="max-width:220px" />
+          <button class="btn" id="auditSearchBtn">搜索</button>
+          <span class="spacer"></span>
+          <button class="btn" id="auditRefreshBtn">刷新</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>时间</th><th>操作人</th><th>操作</th><th>对象</th><th>明细</th><th>IP</th>
+              </tr>
+            </thead>
+            <tbody id="auditRows"></tbody>
+          </table>
+        </div>
+        <div class="pager">
+          <button class="btn" id="auditPrevBtn">上一页</button>
+          <span id="auditPageInfo">第 1 页</span>
+          <button class="btn" id="auditNextBtn">下一页</button>
         </div>
       </div>
     </div>
@@ -178,14 +256,14 @@
   <div class="modal-mask" id="pwdModal" style="display:none">
     <div class="modal" style="max-width:420px">
       <div class="modal-head">
-        <span>修改后台密码</span>
+        <span>修改密码</span>
         <button class="close-x" data-close="pwdModal">&times;</button>
       </div>
       <div class="modal-body">
         <label class="field"><span>当前密码</span><input class="input" id="p_old" type="password" placeholder="请输入当前密码" /></label>
-        <label class="field"><span>新密码（至少 4 位）</span><input class="input" id="p_new1" type="password" placeholder="请输入新密码" /></label>
+        <label class="field"><span>新密码（至少 8 位，须含字母和数字）</span><input class="input" id="p_new1" type="password" placeholder="请输入新密码" /></label>
         <label class="field"><span>确认新密码</span><input class="input" id="p_new2" type="password" placeholder="再次输入新密码" /></label>
-        <div class="hint">修改成功后所有登录会话失效，需使用新密码重新登录。</div>
+        <div class="hint">修改成功后当前设备需重新登录；其他成员的会话不受影响。</div>
       </div>
       <div class="modal-foot">
         <button class="btn" data-close="pwdModal">取消</button>
@@ -303,6 +381,75 @@
         <button class="close-x" data-close="testModal">&times;</button>
       </div>
       <div class="modal-body" id="testModalBody"></div>
+    </div>
+  </div>
+
+  <!-- 成员编辑弹层 -->
+  <div class="modal-mask" id="userModal" style="display:none">
+    <div class="modal" style="max-width:460px">
+      <div class="modal-head">
+        <span id="userModalTitle">新增成员</span>
+        <button class="close-x" data-close="userModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="u_id" />
+        <label class="field" id="u_username_wrap"><span>用户名（3-20 位小写字母 / 数字 / 下划线）</span><input class="input" id="u_username" placeholder="如 zhangsan" /></label>
+        <label class="field"><span>昵称</span><input class="input" id="u_displayName" placeholder="如 张三" /></label>
+        <label class="field"><span>角色</span>
+          <select class="select" id="u_role">
+            <option value="member">成员（使用工作台，查看自己的数据）</option>
+            <option value="viewer">只读成员（仅数据概览）</option>
+            <option value="admin">管理员（配置 / 成员 / 日志）</option>
+            <option value="owner">超级管理员（唯一，可管理一切）</option>
+          </select>
+          <div class="hint" id="u_role_hint">创建 admin / owner 需本人是超级管理员。</div>
+        </label>
+        <label class="field" id="u_password_wrap"><span>初始密码（至少 8 位，须含字母和数字）</span><input class="input" id="u_password" type="password" placeholder="请输入初始密码" autocomplete="new-password" /></label>
+        <label class="field" id="u_status_wrap" style="display:none"><span>状态</span>
+          <select class="select" id="u_status">
+            <option value="active">启用</option>
+            <option value="disabled">停用（立即禁止登录，数据保留）</option>
+          </select>
+        </label>
+        <div class="hint" id="u_hint"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" data-close="userModal">取消</button>
+        <button class="btn" id="resetPwdBtn" style="display:none">重置密码</button>
+        <button class="btn primary" id="saveUserBtn">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 临时密码展示（重置密码后仅本次显示） -->
+  <div class="modal-mask" id="tempPwdModal" style="display:none">
+    <div class="modal" style="max-width:420px">
+      <div class="modal-head">
+        <span>临时密码</span>
+        <button class="close-x" data-close="tempPwdModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>已为 <b id="tempPwdUser"></b> 重置密码，临时密码为：</p>
+        <p style="font-size:20px;font-weight:600;letter-spacing:2px" id="tempPwdValue"></p>
+        <div class="hint">该密码仅本次显示；用户下次登录将被要求修改密码。请通过安全渠道告知。</div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn primary" data-close="tempPwdModal">知道了</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 我的登录记录 -->
+  <div class="modal-mask" id="myLoginsModal" style="display:none">
+    <div class="modal" style="max-width:560px">
+      <div class="modal-head">
+        <span>我的登录记录</span>
+        <button class="close-x" data-close="myLoginsModal">&times;</button>
+      </div>
+      <div class="modal-body" id="myLoginsBody"></div>
+      <div class="modal-foot">
+        <button class="btn" data-close="myLoginsModal">关闭</button>
+      </div>
     </div>
   </div>
 

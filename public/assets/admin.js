@@ -10,7 +10,9 @@ const els = {
     api: $('#pane-api'),
     logs: $('#pane-logs'),
     network: $('#pane-network'),
-    memory: $('#pane-memory')
+    memory: $('#pane-memory'),
+    users: $('#pane-users'),
+    audit: $('#pane-audit')
   },
   configRows: $('#configRows'),
   cfgStats: $('#cfgStats'),
@@ -25,13 +27,44 @@ const els = {
   memKeyword: $('#memKeyword'),
   memPageInfo: $('#memPageInfo'),
   memStats: $('#memStats'),
+  memOwnerFilter: $('#memOwnerFilter'),
+  overviewCards: $('#overviewCards'),
+  logKeyword: $('#logKeyword'),
+  logModelFilter: $('#logModelFilter'),
+  logDateFrom: $('#logDateFrom'),
+  logDateTo: $('#logDateTo'),
+  logSort: $('#logSort'),
+  currentUser: $('#currentUser'),
+  userRows: $('#userRows'),
+  auditRows: $('#auditRows'),
+  auditPageInfo: $('#auditPageInfo'),
+  auditActionFilter: $('#auditActionFilter'),
+  auditKeyword: $('#auditKeyword'),
+  myLoginsBody: $('#myLoginsBody'),
   toastWrap: $('#toastWrap')
 };
 
 const page = { limit: 50, offset: 0, total: 0 };
-const memPage = { limit: 20, offset: 0, total: 0, keyword: '' };
+const memPage = { limit: 20, offset: 0, total: 0, keyword: '', ownerId: '' };
 let editingId = null;
 let memoryCurrent = null; // 当前查看的会话记录
+
+/* ---------- 团队账号（P1/P2） ---------- */
+const userMap = {};        // id -> 用户（供「归属」列展示）
+let userMapLoaded = false;
+let currentUserId = null;
+let currentUserRole = '';
+const ROLE_LABELS = { owner: '超级管理员', admin: '管理员', member: '成员', viewer: '只读成员' };
+const AUDIT_LABELS = {
+  'auth.login_ok': '登录成功', 'auth.login_fail': '登录失败', 'auth.logout': '退出登录',
+  'auth.password_change': '修改密码', 'auth.register': '注册账号',
+  'user.create': '创建账号', 'user.update': '修改账号', 'user.disable': '停用账号',
+  'user.enable': '启用账号', 'user.reset_password': '重置密码',
+  'config.create': '新增配置', 'config.update': '修改配置', 'config.delete': '删除配置',
+  'config.activate': '设默认配置', 'config.settings': '修改全局设置', 'config.test': '测试连通性',
+  'memory.note': '保存备注', 'memory.delete': '删除会话记录', 'memory.export': '导出会话',
+  'log.clear': '清空日志'
+};
 
 function toast(msg, type = '') {
   const el = document.createElement('div');
@@ -85,7 +118,9 @@ els.tabs.forEach((btn) => {
     for (const k in els.panes) els.panes[k].classList.toggle('active', k === name);
     if (name === 'logs') loadLogs();
     if (name === 'network') loadPing(true);
-    if (name === 'memory') loadMemory();
+    if (name === 'memory') { ensureUserMap(); loadMemory(); loadOverview(); }
+    if (name === 'users') loadUsers();
+    if (name === 'audit') loadAudit();
   });
 });
 
@@ -315,15 +350,36 @@ async function loadLogs() {
     const q = new URLSearchParams({ limit: page.limit, offset: page.offset });
     const status = els.statusFilter.value;
     if (status) q.set('status', status);
+    const kw = els.logKeyword.value.trim();
+    if (kw) q.set('keyword', kw);
+    const model = els.logModelFilter.value;
+    if (model) q.set('model', model);
+    if (els.logDateFrom.value) q.set('dateFrom', new Date(`${els.logDateFrom.value}T00:00:00`).toISOString());
+    if (els.logDateTo.value) q.set('dateTo', new Date(`${els.logDateTo.value}T23:59:59`).toISOString());
+    const sort = els.logSort.value;
+    if (sort && sort !== 'time_desc') {
+      const idx = sort.lastIndexOf('_');
+      q.set('sort', sort.slice(0, idx));
+      q.set('dir', sort.slice(idx + 1));
+    }
     const data = await api(`/api/logs?${q.toString()}`);
     page.total = data.total;
     renderLogs(data.items);
     els.logCountBadge.textContent = data.total;
     renderPageInfo();
   } catch (e) {
+    if (e.status === 401) return;
     toast('加载日志失败：' + e.message, 'error');
   }
 }
+
+// 日志筛选器变更 → 回到第一页
+['statusFilter', 'logKeyword', 'logModelFilter', 'logDateFrom', 'logDateTo', 'logSort'].forEach((id) => {
+  els[id].addEventListener('change', () => { page.offset = 0; loadLogs(); });
+});
+els.logKeyword.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); page.offset = 0; loadLogs(); }
+});
 
 function renderLogs(items) {
   els.logRows.innerHTML = '';
@@ -537,6 +593,7 @@ async function loadMemory() {
   try {
     const q = new URLSearchParams({ limit: memPage.limit, offset: memPage.offset });
     if (memPage.keyword) q.set('keyword', memPage.keyword);
+    if (memPage.ownerId) q.set('ownerId', memPage.ownerId);
     const data = await api(`/api/admin/memory?${q.toString()}`);
     memPage.total = data.total;
     renderMemStats(data.stats);
@@ -565,13 +622,15 @@ function renderMemStats(stats) {
 function renderMemory(items) {
   els.memRows.innerHTML = '';
   if (!items.length) {
-    els.memRows.innerHTML = `<tr><td colspan="6" class="empty">${memPage.keyword ? '没有匹配的会话记录' : '暂无会话记录'}</td></tr>`;
+    els.memRows.innerHTML = `<tr><td colspan="7" class="empty">${memPage.keyword || memPage.ownerId ? '没有匹配的会话记录' : '暂无会话记录'}</td></tr>`;
     return;
   }
   items.forEach((c) => {
+    const owner = c.ownerId ? (userMap[c.ownerId] ? `${esc(userMap[c.ownerId].displayName || userMap[c.ownerId].username)}（${ROLE_LABELS[userMap[c.ownerId].role] || ''}）` : esc(c.ownerId)) : '<span style="color:var(--text-dim)">访客</span>';
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td><b>${esc(c.title || '新对话')}</b><div class="note-text" style="color:var(--text-dim)">${esc(c.preview || '')}</div></td>
+      <td>${owner}</td>
       <td>${c.count ?? 0}</td>
       <td class="mem-note-cell">${c.note
         ? `<span class="note-text has" title="${esc(c.note)}">${esc(c.note)}</span>`
@@ -702,7 +761,15 @@ els.memKeyword.addEventListener('keydown', (e) => {
 });
 $('#memResetBtn').addEventListener('click', () => {
   els.memKeyword.value = '';
+  els.memOwnerFilter.value = '';
   memPage.keyword = '';
+  memPage.ownerId = '';
+  memPage.offset = 0;
+  loadMemory();
+});
+// 按成员筛选
+els.memOwnerFilter.addEventListener('change', () => {
+  memPage.ownerId = els.memOwnerFilter.value;
   memPage.offset = 0;
   loadMemory();
 });
@@ -712,6 +779,287 @@ $('#memPrevBtn').addEventListener('click', () => {
 });
 $('#memNextBtn').addEventListener('click', () => {
   if (memPage.offset + memPage.limit < memPage.total) { memPage.offset += memPage.limit; loadMemory(); }
+});
+
+/* ================= 成员管理（P1） ================= */
+async function ensureUserMap() {
+  if (userMapLoaded) return;
+  try {
+    const list = await api('/api/admin/users');
+    list.forEach((u) => { userMap[u.id] = u; });
+    userMapLoaded = true;
+    // 填充「按成员筛选」下拉
+    els.memOwnerFilter.innerHTML = '<option value="">全部成员</option>'
+      + list.map((u) => `<option value="${u.id}">${esc(u.displayName || u.username)}（${u.username}）</option>`).join('');
+    if (memPage.ownerId) els.memOwnerFilter.value = memPage.ownerId;
+  } catch (_) { /* 非管理员身份时静默（成员筛选不可用） */ }
+}
+
+async function loadUsers() {
+  try {
+    const list = await api('/api/admin/users');
+    list.forEach((u) => { userMap[u.id] = u; });
+    userMapLoaded = true;
+    renderUsers(list);
+  } catch (e) {
+    if (e.status === 401) return;
+    if (e.status === 403) {
+      els.userRows.innerHTML = '<tr><td colspan="7" class="empty">无权限查看（仅 owner / admin）</td></tr>';
+      return;
+    }
+    toast('加载成员失败：' + e.message, 'error');
+  }
+}
+
+function renderUsers(list) {
+  els.userRows.innerHTML = '';
+  if (!list.length) {
+    els.userRows.innerHTML = '<tr><td colspan="7" class="empty">暂无成员</td></tr>';
+    return;
+  }
+  list.forEach((u) => {
+    const isSelf = u.id === currentUserId;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><b>${esc(u.username)}</b>${isSelf ? ' <span class="badge ok">当前</span>' : ''}</td>
+      <td>${esc(u.displayName || '-')}</td>
+      <td>${ROLE_LABELS[u.role] || esc(u.role)}</td>
+      <td>${u.status === 'active' ? '<span class="badge ok">启用</span>' : '<span class="badge err">已停用</span>'}</td>
+      <td>${esc(fmtTime(u.lastLoginAt))}</td>
+      <td>${esc(fmtTime(u.createdAt))}</td>
+      <td>
+        <button class="btn" data-user-act="edit" data-id="${u.id}">编辑</button>
+        <button class="btn" data-user-act="reset" data-id="${u.id}">重置密码</button>
+        ${u.status === 'active'
+          ? `<button class="btn danger" data-user-act="disable" data-id="${u.id}" ${isSelf ? 'disabled title="不能停用自己"' : ''}>停用</button>`
+          : '<button class="btn" data-user-act="enable" data-id="' + u.id + '">启用</button>'}
+      </td>`;
+    els.userRows.appendChild(tr);
+  });
+}
+
+function openUserModal(user) {
+  $('#u_id').value = user ? user.id : '';
+  $('#u_username').value = user ? user.username : '';
+  $('#u_displayName').value = user ? (user.displayName || '') : '';
+  $('#u_role').value = user ? user.role : 'member';
+  $('#u_status').value = user ? user.status : 'active';
+  $('#u_password').value = '';
+  $('#userModalTitle').textContent = user ? `编辑成员：${user.username}` : '新增成员';
+  // 创建模式：显示用户名/初始密码；编辑模式：显示状态，隐藏密码（重置走单独按钮）
+  $('#u_username_wrap').style.display = user ? 'none' : '';
+  $('#u_password_wrap').style.display = user ? 'none' : '';
+  $('#u_status_wrap').style.display = user ? '' : 'none';
+  $('#resetPwdBtn').style.display = user ? '' : 'none';
+  $('#u_role').disabled = !!(user && user.id === currentUserId);
+  $('#u_role_hint').textContent = (user && user.id === currentUserId)
+    ? '不能修改自己的角色'
+    : (currentUserRole === 'owner' ? '创建 admin / owner 需本人是超级管理员。' : '仅超级管理员可创建 admin / owner 账号。');
+  $('#u_hint').textContent = user
+    ? '停用后该账号立即无法登录，历史数据完整保留。'
+    : '初始密码至少 8 位，须同时包含字母和数字。';
+  $('#userModal').style.display = 'grid';
+}
+
+$('#addUserBtn').addEventListener('click', () => openUserModal(null));
+$('#refreshUsersBtn').addEventListener('click', loadUsers);
+
+$('#saveUserBtn').addEventListener('click', async () => {
+  const id = $('#u_id').value;
+  const displayName = $('#u_displayName').value.trim();
+  try {
+    if (id) {
+      const payload = { displayName, role: $('#u_role').value, status: $('#u_status').value };
+      if (id === currentUserId) { delete payload.role; delete payload.status; }
+      await api(`/api/admin/users/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+      toast('成员信息已更新', 'success');
+    } else {
+      const username = $('#u_username').value.trim();
+      const password = $('#u_password').value;
+      if (!username) { toast('请输入用户名', 'error'); return; }
+      if (password.length < 8) { toast('初始密码至少 8 位', 'error'); return; }
+      if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) { toast('密码须同时包含字母和数字', 'error'); return; }
+      await api('/api/admin/users', {
+        method: 'POST',
+        body: JSON.stringify({ username, displayName, password, role: $('#u_role').value })
+      });
+      toast('成员已创建', 'success');
+    }
+    $('#userModal').style.display = 'none';
+    userMapLoaded = false;
+    loadUsers();
+    ensureUserMap();
+  } catch (e) {
+    if (e.status === 401) return;
+    toast('保存失败：' + e.message, 'error');
+  }
+});
+
+$('#resetPwdBtn').addEventListener('click', async () => {
+  const id = $('#u_id').value;
+  if (!id) return;
+  if (!confirm('重置该成员的密码？将生成随机临时密码，对方下次登录需改密。')) return;
+  try {
+    const data = await api(`/api/admin/users/${id}`, { method: 'PUT', body: JSON.stringify({ resetPassword: true }) });
+    const u = userMap[id];
+    $('#tempPwdUser').textContent = u ? (u.displayName || u.username) : id;
+    $('#tempPwdValue').textContent = data.tempPassword || '(未返回)';
+    $('#tempPwdModal').style.display = 'grid';
+  } catch (e) {
+    if (e.status === 401) return;
+    toast('重置失败：' + e.message, 'error');
+  }
+});
+
+els.userRows.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-user-act]');
+  if (!btn) return;
+  const id = btn.dataset.id;
+  const act = btn.dataset.userAct;
+  try {
+    if (act === 'edit') {
+      openUserModal(userMap[id] || null);
+    } else if (act === 'reset') {
+      openUserModal(userMap[id] || null);
+      $('#resetPwdBtn').click();
+    } else if (act === 'disable' || act === 'enable') {
+      const u = userMap[id];
+      const ok = confirm(act === 'disable'
+        ? `确定停用「${u ? (u.displayName || u.username) : id}」？停用后立即无法登录，历史数据保留。`
+        : `确定启用「${u ? (u.displayName || u.username) : id}」？`);
+      if (!ok) return;
+      await api(`/api/admin/users/${id}`, { method: 'PUT', body: JSON.stringify({ status: act === 'disable' ? 'disabled' : 'active' }) });
+      toast(act === 'disable' ? '已停用' : '已启用', 'success');
+      userMapLoaded = false;
+      loadUsers();
+      ensureUserMap();
+    }
+  } catch (err) {
+    if (err.status === 401) return;
+    toast('操作失败：' + err.message, 'error');
+  }
+});
+
+/* ================= 审计日志（P1） ================= */
+const auditPage = { limit: 50, offset: 0, total: 0, action: '', keyword: '' };
+
+// 填充操作类型下拉（首次）
+if (els.auditActionFilter.options.length <= 1) {
+  Object.entries(AUDIT_LABELS).forEach(([k, v]) => {
+    const opt = document.createElement('option');
+    opt.value = k;
+    opt.textContent = v;
+    els.auditActionFilter.appendChild(opt);
+  });
+}
+
+async function loadAudit() {
+  try {
+    const q = new URLSearchParams({ limit: auditPage.limit, offset: auditPage.offset });
+    if (auditPage.action) q.set('action', auditPage.action);
+    if (auditPage.keyword) q.set('keyword', auditPage.keyword);
+    const data = await api(`/api/admin/audit-logs?${q.toString()}`);
+    auditPage.total = data.total;
+    renderAudit(data.items);
+    const totalPages = Math.max(1, Math.ceil(auditPage.total / auditPage.limit));
+    const cur = Math.floor(auditPage.offset / auditPage.limit) + 1;
+    els.auditPageInfo.textContent = `第 ${cur} / ${totalPages} 页 · 共 ${auditPage.total} 条`;
+  } catch (e) {
+    if (e.status === 401) return;
+    if (e.status === 403) {
+      els.auditRows.innerHTML = '<tr><td colspan="6" class="empty">无权限查看（仅 owner / admin）</td></tr>';
+      return;
+    }
+    toast('加载审计日志失败：' + e.message, 'error');
+  }
+}
+
+function renderAudit(items) {
+  els.auditRows.innerHTML = '';
+  if (!items.length) {
+    els.auditRows.innerHTML = '<tr><td colspan="6" class="empty">暂无审计记录</td></tr>';
+    return;
+  }
+  items.forEach((l) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${esc(fmtTime(l.time))}</td>
+      <td>${esc(l.actorName || '-')}</td>
+      <td>${esc(AUDIT_LABELS[l.action] || l.action)}</td>
+      <td>${esc(l.target || '-')}</td>
+      <td class="truncate" title="${esc(l.detail || '')}">${esc(l.detail || '-')}</td>
+      <td>${esc((l.ip || '').replace('::ffff:', '') || '-')}</td>`;
+    els.auditRows.appendChild(tr);
+  });
+}
+
+$('#auditSearchBtn').addEventListener('click', () => {
+  auditPage.action = els.auditActionFilter.value;
+  auditPage.keyword = els.auditKeyword.value.trim();
+  auditPage.offset = 0;
+  loadAudit();
+});
+els.auditActionFilter.addEventListener('change', () => {
+  auditPage.action = els.auditActionFilter.value;
+  auditPage.offset = 0;
+  loadAudit();
+});
+els.auditKeyword.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); $('#auditSearchBtn').click(); }
+});
+$('#auditRefreshBtn').addEventListener('click', loadAudit);
+$('#auditPrevBtn').addEventListener('click', () => {
+  if (auditPage.offset > 0) { auditPage.offset -= auditPage.limit; loadAudit(); }
+});
+$('#auditNextBtn').addEventListener('click', () => {
+  if (auditPage.offset + auditPage.limit < auditPage.total) { auditPage.offset += auditPage.limit; loadAudit(); }
+});
+
+/* ================= 数据概览（P2） ================= */
+async function loadOverview() {
+  try {
+    const d = await api('/api/admin/overview?days=1');
+    const cards = [
+      ['今日请求', d.totalRequests ?? 0],
+      ['成功率', d.successRate === null ? '-' : `${d.successRate}%`],
+      ['今日 Token', d.totalTokens ?? 0],
+      ['平均耗时', d.avgLatencyMs === null ? '-' : `${d.avgLatencyMs}ms`],
+      ['活跃成员', d.activeActors ?? 0],
+      ['今日失败', d.errorRequests ?? 0]
+    ];
+    els.overviewCards.innerHTML = cards
+      .map(([label, v]) => `<div class="ov-card"><b>${esc(v)}</b><span>${label}</span></div>`)
+      .join('');
+  } catch (e) {
+    if (e.status === 401 || e.status === 403) return;
+    els.overviewCards.innerHTML = '<div class="hint">概览加载失败</div>';
+  }
+}
+
+/* ================= 当前用户 / 我的登录记录 ================= */
+async function initMe() {
+  try {
+    const data = await api('/api/admin/me');
+    const u = data.user;
+    currentUserId = u.id;
+    currentUserRole = u.role;
+    els.currentUser.textContent = `${u.displayName || u.username}（${ROLE_LABELS[u.role] || u.role}）`;
+  } catch (_) { /* 静默：顶栏不展示 */ }
+}
+
+$('#myLoginsBtn').addEventListener('click', async () => {
+  try {
+    const list = await api('/api/auth/my-logins');
+    els.myLoginsBody.innerHTML = list.length
+      ? `<table><thead><tr><th>时间</th><th>事件</th><th>IP</th></tr></thead><tbody>${list.map((l) => `
+          <tr><td>${esc(fmtTime(l.time))}</td><td>${esc(AUDIT_LABELS[l.action] || l.action)}</td><td>${esc((l.ip || '').replace('::ffff:', '') || '-')}</td></tr>`).join('')}
+        </tbody></table>`
+      : '<div class="empty">暂无登录记录</div>';
+    $('#myLoginsModal').style.display = 'grid';
+  } catch (e) {
+    if (e.status === 401) return;
+    toast('加载失败：' + e.message, 'error');
+  }
 });
 
 /* ================= 修改密码 / 退出登录 ================= */
@@ -727,15 +1075,16 @@ $('#savePwdBtn').addEventListener('click', async () => {
   const n1 = $('#p_new1').value;
   const n2 = $('#p_new2').value;
   if (!oldPwd) { toast('请输入当前密码', 'error'); return; }
-  if (n1.length < 4) { toast('新密码至少 4 位', 'error'); return; }
+  if (n1.length < 8) { toast('新密码至少 8 位', 'error'); return; }
+  if (!/[A-Za-z]/.test(n1) || !/\d/.test(n1)) { toast('新密码须同时包含字母和数字', 'error'); return; }
   if (n1 !== n2) { toast('两次输入的新密码不一致', 'error'); return; }
   try {
-    await api('/api/admin/password', {
+    await api('/api/auth/password', {
       method: 'PUT',
       body: JSON.stringify({ currentPassword: oldPwd, newPassword: n1 })
     });
     toast('密码已修改，请使用新密码重新登录', 'success');
-    setTimeout(() => { location.href = '/admin/login'; }, 1200);
+    setTimeout(() => { location.href = '/team-login'; }, 1200);
   } catch (e) {
     if (e.status === 401) return;
     toast('修改失败：' + e.message, 'error');
@@ -744,11 +1093,24 @@ $('#savePwdBtn').addEventListener('click', async () => {
 
 $('#logoutBtn').addEventListener('click', async () => {
   try {
-    await api('/api/admin/logout', { method: 'POST', body: '{}' });
+    await api('/api/auth/logout', { method: 'POST', body: '{}' });
   } catch (_) { /* 即使请求失败也跳登录页 */ }
-  location.href = '/admin/login';
+  location.href = '/team-login';
 });
 
 /* ---------- 初始化 ---------- */
 loadConfigs();
+initMe();
+ensureUserMap();
+
+// 日志「模型」筛选项由当前配置列表填充
+api('/api/configs').then((list) => {
+  const models = [...new Set((list || []).map((c) => c.model).filter(Boolean))];
+  models.forEach((m) => {
+    const opt = document.createElement('option');
+    opt.value = m;
+    opt.textContent = m;
+    els.logModelFilter.appendChild(opt);
+  });
+}).catch(() => { /* 配置加载失败时模型筛选留空 */ });
 loadSettings();

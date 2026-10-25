@@ -9,17 +9,40 @@ const els = {
   messages: document.getElementById('messages'),
   input: document.getElementById('input'),
   sendBtn: document.getElementById('sendBtn'),
+  teamLogoutBtn: document.getElementById('teamLogoutBtn'),
+  meCenterBtn: document.getElementById('meCenterBtn'),
+  teamUserTag: document.getElementById('teamUserTag'),
+  adminLink: document.getElementById('adminLink'),
   clearChatBtn: document.getElementById('clearChatBtn'),
   newConvBtn: document.getElementById('newConvBtn'),
   delConvBtn: document.getElementById('delConvBtn'),
   convList: document.getElementById('convList'),
   wbLogoutBtn: document.getElementById('wbLogoutBtn'),
   toastWrap: document.getElementById('toastWrap'),
+  thinkingBtn: document.getElementById('thinkingBtn'),
+  effortSelect: document.getElementById('effortSelect'),
+  effortLabel: document.getElementById('effortLabel'),
   webSearchBtn: document.getElementById('webSearchBtn'),
+  promptBtn: document.getElementById('promptBtn'),
+  promptPanel: document.getElementById('promptPanel'),
+  promptInput: document.getElementById('promptInput'),
+  promptCount: document.getElementById('promptCount'),
+  promptResetBtn: document.getElementById('promptResetBtn'),
+  promptSaveBtn: document.getElementById('promptSaveBtn'),
   chatInput: document.getElementById('chatInput'),
   attachRow: document.getElementById('attachRow'),
   attachBtn: document.getElementById('attachBtn'),
-  fileInput: document.getElementById('fileInput')
+  fileInput: document.getElementById('fileInput'),
+  // 分享对话
+  shareBtn: document.getElementById('shareBtn'),
+  shareModal: document.getElementById('shareModal'),
+  shareModalClose: document.getElementById('shareModalClose'),
+  shareExpiry: document.getElementById('shareExpiry'),
+  shareCreateBtn: document.getElementById('shareCreateBtn'),
+  shareLinkBox: document.getElementById('shareLinkBox'),
+  shareLinkInput: document.getElementById('shareLinkInput'),
+  shareLinkCopyBtn: document.getElementById('shareLinkCopyBtn'),
+  shareList: document.getElementById('shareList')
 };
 
 let configs = [];
@@ -27,25 +50,108 @@ let currentConfigId = null;
 let conversations = [];   // 会话元信息列表
 let currentConv = null;   // 当前会话 {id, title, messages}
 let sending = false;
-let webSearchEnabled = false; // 联网搜索开关（localStorage 持久化，随每次请求发给后端）
 
-/* ================= 联网搜索开关 ================= */
-function loadWebSearchPref() {
-  try { webSearchEnabled = localStorage.getItem('wb_websearch') === '1'; } catch (_) { webSearchEnabled = false; }
-  renderWebSearchBtn();
+/* ================= 会话参数（深度思考 / 思考强度 / 联网 / 系统提示） =================
+ * 用户手动改过的项存 localStorage（记住选择）；未手动改过的项跟随当前 API 配置的默认值。
+ * 请求时随 body 一起发给后端，覆盖配置默认值（含"关闭"这类显式 false）。
+ */
+const params = {
+  enableThinking: false,
+  reasoningEffort: 'high',
+  webSearch: false,
+  systemPrompt: ''
+};
+
+const PARAM_KEYS = {
+  enableThinking: 'wb_thinking',
+  reasoningEffort: 'wb_effort',
+  webSearch: 'wb_websearch',
+  systemPrompt: 'wb_prompt'
+};
+
+/** 读 localStorage 偏好；null 表示用户没手动设置过 */
+function getPref(key) {
+  try {
+    const v = localStorage.getItem(key);
+    return v === null ? null : v;
+  } catch (_) { return null; }
 }
-function renderWebSearchBtn() {
-  if (!els.webSearchBtn) return;
-  els.webSearchBtn.classList.toggle('active', webSearchEnabled);
-  els.webSearchBtn.title = webSearchEnabled
-    ? '联网搜索已开启：本次对话允许模型调用 web_search 获取实时信息（点击关闭）'
-    : '联网搜索已关闭：点击开启后，模型可调用 web_search 获取实时信息';
+function setPref(key, value) {
+  try { localStorage.setItem(key, value); } catch (_) { /* 隐私模式忽略 */ }
 }
-els.webSearchBtn && els.webSearchBtn.addEventListener('click', () => {
-  webSearchEnabled = !webSearchEnabled;
-  try { localStorage.setItem('wb_websearch', webSearchEnabled ? '1' : '0'); } catch (_) { /* 隐私模式忽略 */ }
-  renderWebSearchBtn();
-  toast(webSearchEnabled ? '已开启联网搜索' : '已关闭联网搜索', 'success');
+function clearPref(key) {
+  try { localStorage.removeItem(key); } catch (_) { /* 忽略 */ }
+}
+
+/** 加载/切换配置时调用：用户手动设过的项用偏好值，未设过的项跟随该配置的默认值 */
+function applyConfigDefaults(cfg) {
+  if (!cfg) return;
+  const prefThinking = getPref(PARAM_KEYS.enableThinking);
+  params.enableThinking = prefThinking === null ? !!cfg.enableThinking : prefThinking === '1';
+  const prefEffort = getPref(PARAM_KEYS.reasoningEffort);
+  params.reasoningEffort = prefEffort === null
+    ? (cfg.reasoningEffort === 'max' ? 'max' : 'high')
+    : (prefEffort === 'max' ? 'max' : 'high');
+  const prefWeb = getPref(PARAM_KEYS.webSearch);
+  params.webSearch = prefWeb === null ? !!cfg.webSearch : prefWeb === '1';
+  const prefPrompt = getPref(PARAM_KEYS.systemPrompt);
+  params.systemPrompt = prefPrompt === null ? (cfg.systemPrompt || '') : prefPrompt;
+}
+
+/** 把 params 状态渲染到工具栏控件 */
+function renderParams() {
+  if (els.thinkingBtn) els.thinkingBtn.classList.toggle('active', params.enableThinking);
+  if (els.webSearchBtn) els.webSearchBtn.classList.toggle('active', params.webSearch);
+  if (els.effortSelect) els.effortSelect.value = params.reasoningEffort;
+  // 深度思考关闭时禁用强度选择
+  if (els.effortLabel) els.effortLabel.classList.toggle('disabled', !params.enableThinking);
+  if (els.promptBtn) els.promptBtn.classList.toggle('active', !!params.systemPrompt);
+  if (els.promptInput && els.promptInput.value !== params.systemPrompt) {
+    els.promptInput.value = params.systemPrompt;
+  }
+  if (els.promptCount) els.promptCount.textContent = `${params.systemPrompt.length} 字`;
+}
+
+/* —— 控件事件 —— */
+if (els.thinkingBtn) els.thinkingBtn.addEventListener('click', () => {
+  params.enableThinking = !params.enableThinking;
+  setPref(PARAM_KEYS.enableThinking, params.enableThinking ? '1' : '0');
+  renderParams();
+  toast(params.enableThinking ? '已开启深度思考' : '已关闭深度思考', 'success');
+});
+if (els.effortSelect) els.effortSelect.addEventListener('change', () => {
+  params.reasoningEffort = els.effortSelect.value === 'max' ? 'max' : 'high';
+  setPref(PARAM_KEYS.reasoningEffort, params.reasoningEffort);
+  renderParams();
+  toast(`思考强度：${params.reasoningEffort}`, 'success');
+});
+if (els.webSearchBtn) els.webSearchBtn.addEventListener('click', () => {
+  params.webSearch = !params.webSearch;
+  setPref(PARAM_KEYS.webSearch, params.webSearch ? '1' : '0');
+  renderParams();
+  toast(params.webSearch ? '已开启联网搜索' : '已关闭联网搜索', 'success');
+});
+if (els.promptBtn) els.promptBtn.addEventListener('click', () => {
+  const show = els.promptPanel.style.display === 'none';
+  els.promptPanel.style.display = show ? '' : 'none';
+  els.promptBtn.classList.toggle('active', show || !!params.systemPrompt);
+  if (show) { els.promptInput.focus(); }
+});
+if (els.promptInput) els.promptInput.addEventListener('input', () => {
+  params.systemPrompt = els.promptInput.value;
+  setPref(PARAM_KEYS.systemPrompt, params.systemPrompt);
+  renderParams();
+});
+if (els.promptResetBtn) els.promptResetBtn.addEventListener('click', () => {
+  // 恢复配置默认：清掉手动偏好，重新取当前配置值
+  clearPref(PARAM_KEYS.systemPrompt);
+  const cfg = configs.find((c) => c._id === currentConfigId);
+  params.systemPrompt = (cfg && cfg.systemPrompt) || '';
+  renderParams();
+  toast('已恢复为配置中的默认系统提示', 'success');
+});
+if (els.promptSaveBtn) els.promptSaveBtn.addEventListener('click', () => {
+  els.promptPanel.style.display = 'none';
 });
 
 /* ================= 图片粘贴 / 拖拽 / 选择上传 =================
@@ -360,6 +466,9 @@ async function loadConfigs() {
       els.configSelect.appendChild(opt);
     }
     updateConfigLabel();
+    // 参数工具栏：跟随激活配置的默认值（用户手动改过的项仍用偏好）
+    applyConfigDefaults(active);
+    renderParams();
   }
   loadConversations();
 }
@@ -372,6 +481,10 @@ function updateConfigLabel() {
 els.configSelect.addEventListener('change', () => {
   currentConfigId = els.configSelect.value;
   updateConfigLabel();
+  // 切换配置：未手动设置过的参数跟随新配置默认值
+  const cfg = configs.find((c) => c._id === currentConfigId);
+  applyConfigDefaults(cfg);
+  renderParams();
 });
 
 /* ================= 会话管理 ================= */
@@ -480,6 +593,14 @@ els.delConvBtn.addEventListener('click', () => {
 });
 
 /* ================= 消息渲染 ================= */
+
+/* 消息级前端状态（不持久化）：
+ * - views:     msgId → 'rendered' | 'source'（原文/还原视图偏好，仅内存）
+ * - fbPending: 正在提交评价的 msgId（防连点）
+ * 权威状态以服务端为准：currentConv.messages[].feedback / .id
+ */
+const msgState = { views: new Map(), fbPending: new Set() };
+
 function renderMessages() {
   els.messages.innerHTML = '';
   const list = (currentConv && currentConv.messages) || [];
@@ -489,30 +610,196 @@ function renderMessages() {
   }
   for (const m of list) {
     if (m.role === 'system') continue;
-    addMsg(m.role === 'user' ? 'user' : 'assistant', m.content);
+    addMsg(m.role === 'user' ? 'user' : 'assistant', m.content, {
+      mid: m.id || '',
+      feedback: m.feedback,
+      meta: shortTime(m.time)
+    });
   }
   els.messages.scrollTop = els.messages.scrollHeight;
+}
+
+/** 消息工具条 HTML：复制▾ / 原文切换 / 点赞 / 差评（错误消息仅保留复制） */
+function buildMsgTools(extra) {
+  const copyPart = `
+      <div class="copy-group">
+        <button class="tool-btn" data-act="copy" title="复制">⧉ 复制</button>
+        <div class="copy-menu">
+          <button data-copy="text">复制纯文本</button>
+          <button data-copy="md">复制 Markdown</button>
+        </div>
+      </div>`;
+  if (extra.error) return `<div class="msg-tools">${copyPart}</div>`;
+  return `<div class="msg-tools">${copyPart}
+      <button class="tool-btn" data-act="source" title="查看 / 还原 Markdown 原文">&lt;/&gt;</button>
+      <button class="tool-btn" data-act="like" title="点赞">👍</button>
+      <button class="tool-btn" data-act="dislike" title="差评">👎</button>
+    </div>`;
 }
 
 function addMsg(role, content, extra = {}) {
   const wrap = document.createElement('div');
   wrap.className = `msg ${role}${extra.error ? ' error' : ''}`;
   const avatar = role === 'user' ? '我' : 'AI';
-  const meta = extra.meta ? `<div class="meta">${extra.meta}</div>` : '';
   // 兼容纯文本与多模态数组 content（[{type:'text'},{type:'image_url',...}]）
   const { text, images } = contentParts(content);
-  const textHtml = text ? `<div class="bubble">${esc(text)}</div>` : '';
+  const mid = extra.mid || '';
+  wrap.dataset.mid = mid;
+  wrap.dataset.fb = (extra.feedback && extra.feedback.value) || '';
+
+  // 气泡主体：错误消息走纯文本；其余走 Markdown 渲染 + 原文（还原）双视图
+  let bodyHtml;
+  if (extra.error) {
+    bodyHtml = text ? `<div class="bubble plain">${esc(text)}</div>` : '<div class="bubble"></div>';
+  } else if (text) {
+    bodyHtml = `<div class="bubble md">${window.MD ? MD.render(text) : esc(text)}</div>
+      <div class="bubble md-src" hidden><pre>${esc(text)}</pre></div>`;
+  } else {
+    bodyHtml = '<div class="bubble"></div>';
+  }
   const imgsHtml = images
     .map((src) => `<div class="inline-img"><img src="${esc(src)}" alt="消息图片" loading="lazy" /></div>`)
     .join('');
-  const bubbleHtml = textHtml || imgsHtml ? `<div>${textHtml}${imgsHtml}</div>` : `<div><div class="bubble"></div></div>`;
+  const meta = extra.meta ? `<div class="meta">${extra.meta}</div>` : '';
+
   wrap.innerHTML = `
     <div class="avatar">${avatar}</div>
-    ${bubbleHtml}
-    ${meta}`;
+    <div class="msg-main">
+      ${buildMsgTools(extra)}
+      <div class="msg-body">${bodyHtml}${imgsHtml}</div>
+      ${meta}
+    </div>`;
+  bindMsgTools(wrap, text);
+  paintFeedback(wrap);
+  // 恢复该消息的原文视图偏好（仅内存，刷新后回到渲染视图）
+  if (mid && msgState.views.get(mid) === 'source' && !extra.error && text) {
+    const mdB = wrap.querySelector('.bubble.md');
+    const srcB = wrap.querySelector('.bubble.md-src');
+    const srcBtn = wrap.querySelector('[data-act="source"]');
+    if (mdB && srcB && srcBtn) {
+      mdB.setAttribute('hidden', '');
+      srcB.removeAttribute('hidden');
+      srcBtn.classList.add('active');
+    }
+  }
   els.messages.appendChild(wrap);
   els.messages.scrollTop = els.messages.scrollHeight;
 }
+
+/** 绑定单条消息工具条事件（rawText = 该消息的原始 Markdown 文本） */
+function bindMsgTools(wrap, rawText) {
+  const tools = wrap.querySelector('.msg-tools');
+  if (!tools) return;
+
+  // —— 复制：按钮开合菜单，二选一（纯文本 / Markdown） ——
+  const copyBtn = tools.querySelector('[data-act="copy"]');
+  const group = tools.querySelector('.copy-group');
+  if (copyBtn && group) {
+    copyBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const wasOpen = group.classList.contains('open');
+      closeAllCopyMenus();
+      if (!wasOpen) group.classList.add('open');
+    });
+    group.querySelectorAll('[data-copy]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeAllCopyMenus();
+        if (!rawText || !rawText.trim()) { toast('该消息没有文本内容', 'error'); return; }
+        copyText(btn.dataset.copy === 'md' ? rawText : MD.toPlain(rawText),
+          btn.dataset.copy === 'md' ? 'Markdown' : '纯文本');
+      });
+    });
+  }
+
+  // —— 原文（还原）视图切换 ——
+  const srcBtn = tools.querySelector('[data-act="source"]');
+  if (srcBtn) {
+    srcBtn.addEventListener('click', () => {
+      const mdB = wrap.querySelector('.bubble.md');
+      const srcB = wrap.querySelector('.bubble.md-src');
+      if (!mdB || !srcB) return;
+      const showSrc = srcB.hasAttribute('hidden'); // 当前是渲染视图 → 切到原文
+      srcB.toggleAttribute('hidden', !showSrc);
+      mdB.toggleAttribute('hidden', showSrc);
+      srcBtn.classList.toggle('active', showSrc);
+      const mid = wrap.dataset.mid;
+      if (mid) msgState.views.set(mid, showSrc ? 'source' : 'rendered');
+    });
+  }
+
+  // —— 点赞 / 差评 ——
+  const likeBtn = tools.querySelector('[data-act="like"]');
+  const disBtn = tools.querySelector('[data-act="dislike"]');
+  if (likeBtn) likeBtn.addEventListener('click', () => submitFeedback(wrap, 'up'));
+  if (disBtn) disBtn.addEventListener('click', () => submitFeedback(wrap, 'down'));
+}
+
+/** 评价按钮激活态（data-fb: '' | 'up' | 'down'） */
+function paintFeedback(wrap) {
+  const v = wrap.dataset.fb || '';
+  const like = wrap.querySelector('[data-act="like"]');
+  const dis = wrap.querySelector('[data-act="dislike"]');
+  if (like) like.classList.toggle('active', v === 'up');
+  if (dis) dis.classList.toggle('active', v === 'down');
+}
+
+/**
+ * 提交评价（乐观更新 + 失败回滚）
+ * 互斥：同一时刻只有一个激活；再次点击同一按钮 = 取消（value=null）
+ */
+async function submitFeedback(wrap, value) {
+  const mid = wrap.dataset.mid || '';
+  if (!mid) { toast('该消息暂不支持评价（缺少消息 ID）', 'error'); return; }
+  if (msgState.fbPending.has(mid)) return;
+  const prev = wrap.dataset.fb || '';
+  const next = prev === value ? '' : value;
+  wrap.dataset.fb = next;
+  paintFeedback(wrap);
+  msgState.fbPending.add(mid);
+  try {
+    await api(`/api/conversations/${currentConv.id}/messages/${encodeURIComponent(mid)}/feedback`, {
+      method: 'PUT',
+      body: JSON.stringify({ value: next || null })
+    });
+    // 同步本地消息数据（切换会话/刷新前不丢状态）
+    const m = (currentConv.messages || []).find((x) => x.id === mid);
+    if (m) m.feedback = next ? { value: next, at: new Date().toISOString() } : null;
+    toast(next === 'up' ? '已点赞' : next === 'down' ? '已记录差评' : '已取消评价', 'success');
+  } catch (e) {
+    wrap.dataset.fb = prev;
+    paintFeedback(wrap);
+    toast('评价提交失败：' + e.message, 'error');
+  } finally {
+    msgState.fbPending.delete(mid);
+  }
+}
+
+/* ---------- 复制（剪贴板 API + execCommand 降级） ---------- */
+async function copyText(text, label) {
+  let ok = false;
+  try {
+    await navigator.clipboard.writeText(text);
+    ok = true;
+  } catch (_) {
+    // 降级：隐藏 textarea + execCommand（非安全上下文 / 权限被拒时）
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;top:-999px;left:-999px;opacity:0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
+    ta.remove();
+  }
+  toast(ok ? `已复制${label}` : '复制失败，请手动选择文本复制', ok ? 'success' : 'error');
+}
+
+/** 关闭所有打开中的复制下拉菜单 */
+function closeAllCopyMenus() {
+  document.querySelectorAll('.copy-group.open').forEach((g) => g.classList.remove('open'));
+}
+document.addEventListener('click', closeAllCopyMenus);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAllCopyMenus(); });
 
 function setBusy(busy, hint = '') {
   sending = busy;
@@ -552,11 +839,23 @@ async function persistMessages(msgs) {
       method: 'POST',
       body: JSON.stringify({ messages: msgs, configId: currentConfigId || undefined })
     });
+    // 把刚入库消息的 id 回写到对应 DOM 节点（点赞/差评/原文切换依赖 data-mid）
+    if (Array.isArray(msgs) && msgs.length) syncNewMsgIds(currentConv, msgs.length);
     const meta = conversations.find((c) => c.id === currentConv.id);
     if (meta) { meta.count = currentConv.messages.length; meta.updatedAt = currentConv.updatedAt; }
     renderConvList();
   } catch (e) {
     toast('消息保存失败：' + e.message, 'error');
+  }
+}
+
+/** persistMessages 后：把最后 count 条入库消息的 id 同步到消息列表最后 count 个 .msg 节点 */
+function syncNewMsgIds(conv, count) {
+  const nodes = els.messages.querySelectorAll('.msg');
+  const fresh = (conv.messages || []).slice(-count);
+  for (let k = 0; k < count; k++) {
+    const node = nodes[nodes.length - count + k];
+    if (node && fresh[k] && fresh[k].id) node.dataset.mid = fresh[k].id;
   }
 }
 
@@ -614,7 +913,11 @@ async function send() {
       body: JSON.stringify({
         configId: currentConfigId,
         messages: history,
-        webSearch: webSearchEnabled // 联网搜索开关随请求显式传递
+        // 参数工具栏的本次会话设置（覆盖配置默认值，含显式关闭）
+        enableThinking: params.enableThinking,
+        reasoningEffort: params.reasoningEffort,
+        webSearch: params.webSearch,
+        systemPrompt: params.systemPrompt
       })
     });
     const r = data.result;
@@ -667,7 +970,7 @@ els.input.addEventListener('keydown', (e) => {
 
 function autoGrow() {
   els.input.style.height = 'auto';
-  els.input.style.height = Math.min(els.input.scrollHeight, 160) + 'px';
+  els.input.style.height = Math.min(els.input.scrollHeight, 220) + 'px';
 }
 els.input.addEventListener('input', autoGrow);
 
@@ -685,6 +988,97 @@ els.clearChatBtn.addEventListener('click', async () => {
   } catch (e) {
     toast('清空失败：' + e.message, 'error');
   }
+});
+
+/* ================= 分享对话（快照 + 只读链接） ================= */
+
+function openShareModal() {
+  if (!currentConv) { toast('请先选择一个对话', 'error'); return; }
+  const hasMsg = (currentConv.messages || []).some((m) => m.role !== 'system');
+  if (!hasMsg) { toast('当前对话还没有消息，无法分享', 'error'); return; }
+  els.shareLinkBox.style.display = 'none';
+  els.shareLinkInput.value = '';
+  els.shareModal.style.display = '';
+  loadShareList();
+}
+
+function closeShareModal() {
+  els.shareModal.style.display = 'none';
+}
+
+async function loadShareList() {
+  if (!currentConv) return;
+  els.shareList.innerHTML = '<div class="share-empty">加载中…</div>';
+  try {
+    const list = await api(`/api/conversations/${currentConv.id}/shares`);
+    renderShareList(Array.isArray(list) ? list : []);
+  } catch (e) {
+    els.shareList.innerHTML = `<div class="share-empty">加载失败：${esc(e.message)}</div>`;
+  }
+}
+
+function renderShareList(list) {
+  if (!list.length) {
+    els.shareList.innerHTML = '<div class="share-empty">还没有分享链接，点击上方按钮生成</div>';
+    return;
+  }
+  els.shareList.innerHTML = '';
+  for (const s of list) {
+    const row = document.createElement('div');
+    row.className = 'share-row';
+    const exp = s.expiresAt ? `到期 ${esc(shortTime(s.expiresAt))}` : '永久有效';
+    row.innerHTML = `
+      <div class="share-row-main">
+        <div class="share-row-token" title="${esc(s.token)}">/s/${esc(s.token.slice(0, 8))}…</div>
+        <div class="share-row-sub">创建于 ${esc(shortTime(s.createdAt))} · ${exp} · ${s.messageCount} 条消息</div>
+      </div>
+      <button class="btn btn-sm" data-act="copy-link">复制</button>
+      <button class="btn btn-sm danger" data-act="revoke">撤销</button>`;
+    row.querySelector('[data-act="copy-link"]').addEventListener('click', () => {
+      copyText(`${location.origin}/s/${s.token}`, '分享链接');
+    });
+    row.querySelector('[data-act="revoke"]').addEventListener('click', async () => {
+      if (!confirm('撤销后该链接立即失效，确定撤销？')) return;
+      try {
+        await api(`/api/conversations/${currentConv.id}/shares/${encodeURIComponent(s.token)}`, { method: 'DELETE' });
+        toast('已撤销分享', 'success');
+        loadShareList();
+      } catch (e) {
+        toast('撤销失败：' + e.message, 'error');
+      }
+    });
+    els.shareList.appendChild(row);
+  }
+}
+
+if (els.shareBtn) els.shareBtn.addEventListener('click', openShareModal);
+if (els.shareModalClose) els.shareModalClose.addEventListener('click', closeShareModal);
+if (els.shareModal) els.shareModal.addEventListener('click', (e) => {
+  if (e.target === els.shareModal) closeShareModal(); // 点遮罩关闭
+});
+if (els.shareCreateBtn) els.shareCreateBtn.addEventListener('click', async () => {
+  if (!currentConv) return;
+  try {
+    els.shareCreateBtn.disabled = true;
+    const days = Number(els.shareExpiry.value);
+    const d = await api(`/api/conversations/${currentConv.id}/share`, {
+      method: 'POST',
+      body: JSON.stringify({ expiresInDays: days })
+    });
+    els.shareLinkInput.value = `${location.origin}${d.url}`;
+    els.shareLinkBox.style.display = '';
+    els.shareLinkInput.select();
+    toast('分享链接已生成', 'success');
+    loadShareList();
+  } catch (e) {
+    toast('生成分享失败：' + e.message, 'error');
+  } finally {
+    els.shareCreateBtn.disabled = false;
+  }
+});
+if (els.shareLinkCopyBtn) els.shareLinkCopyBtn.addEventListener('click', () => {
+  const v = els.shareLinkInput.value;
+  if (v) copyText(v, '分享链接');
 });
 
 /* ---------- 工作台访客密码：登出按钮（功能开启时才显示） ---------- */
@@ -705,7 +1099,65 @@ els.wbLogoutBtn.addEventListener('click', async () => {
   location.href = '/login';
 });
 
+/* ---------- 团队账号：员工身份 / 员工中心入口 / 退出登录（登录态才显示） ---------- */
+async function initTeamAuth() {
+  try {
+    const resp = await fetch('/api/auth/me', { headers: { 'Content-Type': 'application/json' } });
+    const d = await resp.json().catch(() => ({}));
+    if (resp.ok && d.ok && d.data && d.data.user) {
+      const u = d.data.user;
+      els.teamLogoutBtn.style.display = '';
+      els.meCenterBtn.style.display = '';
+      // 顶栏展示身份
+      const roleLabel = { owner: '超管', admin: '管理员', member: '成员', viewer: '只读' }[u.role] || u.role;
+      els.teamUserTag.textContent = `${u.displayName || u.username} · ${roleLabel}`;
+      els.teamUserTag.style.display = '';
+      // 后台管理仅 owner/admin 可见（member 点进去也会被弹回，干脆隐藏）
+      if (u.role !== 'owner' && u.role !== 'admin') {
+        els.adminLink.style.display = 'none';
+      }
+      // viewer 为只读角色：禁用发送
+      if (u.role === 'viewer') {
+        els.sendBtn.disabled = true;
+        els.sendBtn.title = '只读成员不能发起对话，请联系管理员调整角色';
+        els.input.disabled = true;
+        els.input.placeholder = '只读成员不能发起对话（可查看历史会话）';
+      }
+    }
+  } catch (_) { /* 服务异常时保持隐藏 */ }
+}
+
+els.teamLogoutBtn.addEventListener('click', async () => {
+  try {
+    await fetch('/api/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  } catch (_) { /* 即使请求失败也跳登录页 */ }
+  location.href = '/team-login';
+});
+
+/* ---------- 移动端：侧栏抽屉（☰ 唤出 / 选中会话后收起 / Esc 关闭） ---------- */
+(function initSidebarDrawer() {
+  const sidebar = document.getElementById('sidebar');
+  const backdrop = document.getElementById('sidebarBackdrop');
+  const toggle = document.getElementById('sidebarToggle');
+  const closeBtn = document.getElementById('sidebarCloseBtn');
+  if (!sidebar || !backdrop || !toggle) return;
+
+  function open() { sidebar.classList.add('open'); backdrop.classList.add('show'); }
+  function close() { sidebar.classList.remove('open'); backdrop.classList.remove('show'); }
+
+  toggle.addEventListener('click', open);
+  if (closeBtn) closeBtn.addEventListener('click', close);
+  backdrop.addEventListener('click', close);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+
+  // 选中会话 / 切换配置后自动收起（移动端体验；桌面端抽屉不存在，无副作用）
+  document.getElementById('convList') && document.getElementById('convList').addEventListener('click', (e) => {
+    if (e.target.closest('.conv-item') || e.target.closest('.conv-del')) close();
+  });
+  document.getElementById('configSelect') && document.getElementById('configSelect').addEventListener('change', close);
+})();
+
 /* ---------- 初始化 ---------- */
-loadWebSearchPref();
 loadConfigs();
 initWorkbenchAuth();
+initTeamAuth();

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>员工中心 · 星火工作台</title>
+  <link rel="stylesheet" href="/assets/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">我</div>
+      <span>员工中心</span>
+    </div>
+    <div class="top-actions">
+      <a class="btn" href="/">返回工作台</a>
+      <a class="btn" href="/admin" id="adminEntry" style="display:none">后台管理</a>
+      <button class="btn" id="logoutBtn">退出登录</button>
+    </div>
+  </header>
+
+  <main class="admin">
+    <!-- 基本信息 -->
+    <div class="card">
+      <div class="card-title">基本信息</div>
+      <div class="me-profile" id="meProfile">
+        <div class="empty">加载中…</div>
+      </div>
+    </div>
+
+    <!-- 我的数据（近 7 天） -->
+    <div class="card" style="margin-top:16px">
+      <div class="card-title">我的数据 · 近 7 天</div>
+      <div class="ov-cards" id="myOverview">
+        <div class="empty">加载中…</div>
+      </div>
+      <div class="hint" style="margin-top:8px">仅统计你本人的对话记录；全部成员的汇总请让管理员在后台「数据概览」查看。</div>
+    </div>
+
+    <!-- 我的登录记录 -->
+    <div class="card" style="margin-top:16px">
+      <div class="card-title">我的登录记录</div>
+      <div class="hint">最近 30 条登录 / 退出 / 改密记录。如发现异常登录，请立即修改密码并通知管理员。</div>
+      <div class="table-wrap" style="margin-top:10px">
+        <table>
+          <thead>
+            <tr><th>时间</th><th>事件</th><th>IP</th></tr>
+          </thead>
+          <tbody id="myLoginRows">
+            <tr><td colspan="3" class="empty">加载中…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 账号安全 -->
+    <div class="card" style="margin-top:16px">
+      <div class="card-title">账号安全</div>
+      <div class="toolbar">
+        <button class="btn primary" id="changePwdBtn">修改密码</button>
+        <span class="hint">密码至少 8 位，须同时包含字母和数字；修改后当前设备需重新登录，其他设备不受影响。</span>
+      </div>
+    </div>
+  </main>
+
+  <!-- 修改密码 -->
+  <div class="modal-mask" id="pwdModal" style="display:none">
+    <div class="modal" style="max-width:420px">
+      <div class="modal-head">
+        <span>修改密码</span>
+        <button class="close-x" data-close="pwdModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <label class="field"><span>当前密码</span><input class="input" id="p_old" type="password" placeholder="请输入当前密码" /></label>
+        <label class="field"><span>新密码（至少 8 位，须含字母和数字）</span><input class="input" id="p_new1" type="password" placeholder="请输入新密码" /></label>
+        <label class="field"><span>确认新密码</span><input class="input" id="p_new2" type="password" placeholder="再次输入新密码" /></label>
+        <div class="hint">修改成功后当前设备需重新登录；其他成员的会话不受影响。</div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" data-close="pwdModal">取消</button>
+        <button class="btn primary" id="savePwdBtn">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-wrap" id="toastWrap"></div>
+
+  <script src="/assets/me.js"></script>
+</body>
+</html>
