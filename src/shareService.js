@@ -10,7 +10,7 @@
  *   - 过期：读时校验 expiresAt（null=永久），默认 30 天，可 7/30/90/永久；
  *   - 图片内联：消息里的 /uploads 相对 URL 在读文件后转为 data URI（总量 ≤2MB），
  *     使分享页在公开访问（无工作台 cookie）时也能显示图片；超限则保留原 URL（可接受降级）；
- *   - 目录穿越防护：仅用 path.basename 拼 uploads 路径；
+ *   - 目录穿越防护：解析 /uploads 相对路径后校验必须仍在 uploads 根目录内（保留日期子目录）；
  *   - 存储：db.json 顶层 shares 集合（db.js 已加 DEFAULT_DB.shares）。
  */
 
@@ -21,8 +21,25 @@ const db = require('./db');
 const conversationService = require('./conversationService');
 
 const UPLOAD_DIR = path.join(__dirname, '..', 'public', 'uploads');
+const UPLOAD_ROOT = path.resolve(UPLOAD_DIR);
 const MAX_INLINE_BYTES = 2 * 1024 * 1024; // 快照内联 base64 图片总量上限（约对应 1.4MB 原始字节）
 const MIME_BY_EXT = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
+
+/**
+ * 把消息里的 /uploads URL 解析为磁盘路径。
+ *
+ * ⚠️ 历史坑：原来用 path.basename(url) 拼路径，但上传目录带日期子目录
+ * （public/uploads/YYYY-MM-DD/xxx.png），basename 把子目录剥掉后必然读不到文件，
+ * 内联静默失败退化为外链——开启访客密码后公开分享页图片全部裂图。
+ * 现在保留完整相对路径，并用 resolve + 前缀校验防目录穿越。
+ */
+function resolveUploadPath(url) {
+  const rel = String(url || '').replace(/^\/uploads\//, '');
+  if (!rel || path.isAbsolute(rel) || rel.includes('..')) return null;
+  const full = path.resolve(path.join(UPLOAD_ROOT, rel));
+  if (full !== UPLOAD_ROOT && !full.startsWith(UPLOAD_ROOT + path.sep)) return null;
+  return full;
+}
 
 /** 该会话的活跃分享列表（不含快照正文，避免列表响应膨胀） */
 function listByConv(convId) {
@@ -60,16 +77,18 @@ function snapshotMessages(msgs) {
     if (Array.isArray(content)) {
       content = content.map((p) => {
         if (p && p.type === 'image_url' && typeof p.image_url?.url === 'string' && p.image_url.url.startsWith('/uploads/')) {
-          const file = path.join(UPLOAD_DIR, path.basename(p.image_url.url)); // basename 防目录穿越
-          try {
-            const buf = fs.readFileSync(file);
-            const cost = Math.ceil(buf.length * 4 / 3);
-            if (cost <= budget) {
-              budget -= cost;
-              const mime = MIME_BY_EXT[path.extname(file).toLowerCase()] || 'image/png';
-              return { type: 'image_url', image_url: { url: `data:${mime};base64,${buf.toString('base64')}` } };
-            }
-          } catch (_) { /* 文件不存在/读取失败 → 保留原 URL */ }
+          const file = resolveUploadPath(p.image_url.url);
+          if (file) {
+            try {
+              const buf = fs.readFileSync(file);
+              const cost = Math.ceil(buf.length * 4 / 3);
+              if (cost <= budget) {
+                budget -= cost;
+                const mime = MIME_BY_EXT[path.extname(file).toLowerCase()] || 'image/png';
+                return { type: 'image_url', image_url: { url: `data:${mime};base64,${buf.toString('base64')}` } };
+              }
+            } catch (_) { /* 文件不存在/读取失败 → 保留原 URL */ }
+          }
         }
         return p;
       });

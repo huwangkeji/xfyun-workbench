@@ -298,7 +298,9 @@ function getSettings() {
     // 工作台访客密码保护开关（后台「工作台访问控制」维护）
     workbenchAuthEnabled: !!s.workbenchAuthEnabled,
     // 开放自助注册（P3：默认关闭；开启后 /team-login 出现注册入口，注册角色固定为 member）
-    allowSelfRegister: !!s.allowSelfRegister
+    allowSelfRegister: !!s.allowSelfRegister,
+    // 前端面板是否显示模型名字（后台「界面显示设置」维护；关闭后只显示配置名称）
+    showModelName: s.showModelName === undefined ? true : !!s.showModelName
   };
 }
 
@@ -325,6 +327,10 @@ function updateSettings(body) {
   // —— 开放自助注册（P3）——
   if (body.allowSelfRegister !== undefined) {
     next.allowSelfRegister = !!body.allowSelfRegister;
+  }
+  // —— 前端界面显示：模型名字开关（默认开；关闭后工作台只显示配置名称）——
+  if (body.showModelName !== undefined) {
+    next.showModelName = !!body.showModelName;
   }
   db.load().settings = { ...db.load().settings, ...next };
   db.save();

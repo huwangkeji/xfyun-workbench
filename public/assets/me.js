@@ -38,7 +38,7 @@ async function api(path, options = {}) {
   const data = await resp.json().catch(() => ({}));
   if (resp.status === 401) {
     toast('登录已失效，请重新登录', 'error');
-    setTimeout(() => { location.href = '/team-login'; }, 900);
+    setTimeout(() => { location.href = '/team-login?next=' + encodeURIComponent(location.pathname); }, 900);
     const err = new Error('未登录');
     err.status = 401;
     throw err;

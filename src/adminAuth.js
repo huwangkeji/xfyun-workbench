@@ -86,8 +86,28 @@ function bootstrap() {
 
 /* ================= Cookie 基础 ================= */
 
+/**
+ * 追加一个 Set-Cookie 响应头。
+ *
+ * ⚠️ 历史坑：这里原来用 res.setHeader('Set-Cookie', ...)，而 setHeader 是「替换」语义——
+ * 同一响应里第二次写 cookie 会把第一次整条覆盖掉。实际事故：退出登录路由先
+ * clearTeamCookie 再 clearCookie，结果只有 admin_token 被清除，team_token 原样保留，
+ * 员工点「退出登录」后会话依然有效，/team-login 还会被守卫 302 弹回 /app（表现为无法退出）。
+ * 因此一律用 append（Express 扩展；兜底走数组式 setHeader），保证多 cookie 共存。
+ */
+function appendCookie(res, cookie) {
+  if (typeof res.append === 'function') {
+    res.append('Set-Cookie', cookie);
+    return;
+  }
+  const prev = res.getHeader ? res.getHeader('Set-Cookie') : [];
+  const list = Array.isArray(prev) ? prev.slice() : (prev ? [String(prev)] : []);
+  list.push(cookie);
+  res.setHeader('Set-Cookie', list);
+}
+
 function setCookie(res, name, token) {
-  res.setHeader('Set-Cookie', `${name}=${encodeURIComponent(token)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${TTL_HOURS * 3600}`);
+  appendCookie(res, `${name}=${encodeURIComponent(token)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${TTL_HOURS * 3600}`);
 }
 
 /** 签发会话 cookie（HttpOnly，JS 读不到）。name 区分员工/访客两种会话 */
@@ -100,7 +120,17 @@ function issueCookie(res, name = COOKIE_NAME) {
 
 /** 清除会话 cookie */
 function clearCookie(res, name = COOKIE_NAME) {
-  res.setHeader('Set-Cookie', `${name}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0`);
+  appendCookie(res, `${name}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0`);
+}
+
+/**
+ * 一次性清除全部认证 cookie（员工会话 team_token + 旧版后台 admin_token + 访客 wb_token）。
+ * 退出登录/改密路由统一走这里，避免「逐个 clear 互相覆盖」的历史 bug 复发。
+ */
+function clearAllAuthCookies(res) {
+  clearCookie(res, TEAM_COOKIE_NAME);
+  clearCookie(res, COOKIE_NAME);
+  clearCookie(res, WB_COOKIE_NAME);
 }
 
 /** 从请求头中读取指定 cookie 的会话令牌 */
@@ -226,7 +256,13 @@ function requireRole(...roles) {
 /** 页面守卫：未登录跳员工登录页（同时注入 req.user 供路由层做角色判断） */
 function requireTeamPage(req, res, next) {
   const user = resolveTeamUser(req) || resolveLegacyOwner(req);
-  if (!user) return res.redirect('/team-login');
+  if (!user) {
+    // 带原始目标页跳登录页：登录完成后可直接回到 /admin、/me 等想去的页面
+    // （仅放行本站本地路径，防开放式跳转；/team-login、/login 不做目标，避免循环）
+    const target = String((req.originalUrl || req.path || '')).split('?')[0];
+    const safe = /^\/[^/\\]/.test(target) && target !== '/team-login' && target !== '/login' ? target : '';
+    return res.redirect(safe ? `/team-login?next=${encodeURIComponent(safe)}` : '/team-login');
+  }
   req.user = loadUserService().sanitize(user);
   return next();
 }
@@ -259,6 +295,13 @@ function registerFail(ip) {
 
 function clearFails(ip) {
   failMap.delete(ip);
+}
+
+/** IP 锁定剩余秒数（未锁定返回 0，用于给用户明确的等待时间） */
+function lockRemainSec(ip) {
+  const rec = failMap.get(ip);
+  if (!rec || !rec.until || rec.until <= Date.now()) return 0;
+  return Math.ceil((rec.until - Date.now()) / 1000);
 }
 
 /* ================= 工作台（游客）密码保护 =================
@@ -349,12 +392,14 @@ module.exports = {
   verifyPassword,
   issueTeamCookie,
   clearTeamCookie,
+  clearAllAuthCookies,
   resolveTeamUser,
   requireTeamUser,
   requireRole,
   requireTeamPage,
   hasValidToken,
   isLocked,
+  lockRemainSec,
   registerFail,
   clearFails,
   clearCookie,

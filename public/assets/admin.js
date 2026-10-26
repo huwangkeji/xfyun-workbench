@@ -94,9 +94,9 @@ async function api(path, options = {}) {
   }
   const data = await resp.json().catch(() => ({}));
   if (resp.status === 401) {
-    // 后台会话失效：提示并跳登录页
+    // 后台会话失效：提示并跳登录页（带 next=/admin，重新登录后直接回后台）
     toast('登录已失效，请重新登录', 'error');
-    setTimeout(() => { location.href = '/admin/login'; }, 900);
+    setTimeout(() => { location.href = '/team-login?next=' + encodeURIComponent(location.pathname); }, 900);
     const e = new Error(data.error || '未登录');
     e.status = 401;
     throw e;
@@ -212,7 +212,7 @@ async function runTest(id, btn) {
     const data = await resp.json().catch(() => ({}));
     if (resp.status === 401) {
       toast('登录已失效，请重新登录', 'error');
-      setTimeout(() => { location.href = '/admin/login'; }, 900);
+      setTimeout(() => { location.href = '/team-login?next=' + encodeURIComponent(location.pathname); }, 900);
       return;
     }
     if (data.ok) {
@@ -536,10 +536,31 @@ async function loadSettings() {
     $('#s_cooldownSec').value = s.cooldownSec;
     $('#wb_enabled').checked = !!s.workbenchAuthEnabled;
     $('#wb_password').value = '';
+    // 界面显示：默认显示模型名字（旧库无该字段时按开启处理）
+    $('#ui_showModelName').checked = s.showModelName !== false;
   } catch (e) {
     toast('加载调度设置失败：' + e.message, 'error');
   }
 }
+
+/* ================= 界面显示设置（模型名字开关） ================= */
+$('#saveUiDisplayBtn').addEventListener('click', async () => {
+  const btn = $('#saveUiDisplayBtn');
+  btn.disabled = true;
+  try {
+    await api('/api/configs/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ showModelName: $('#ui_showModelName').checked })
+    });
+    toast($('#ui_showModelName').checked ? '已开启：前端面板显示模型名字' : '已关闭：前端面板只显示配置名称', 'success');
+    loadSettings();
+  } catch (e) {
+    if (e.status === 401) return;
+    toast('保存失败：' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 $('#saveSchedBtn').addEventListener('click', async () => {
   const btn = $('#saveSchedBtn');

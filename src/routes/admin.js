@@ -20,10 +20,9 @@ router.get('/me', (req, res) => {
   res.json({ ok: true, data: { authenticated: true, user: req.user } });
 });
 
-// 退出登录（同时清理员工会话与兼容期内的旧后台会话）
+// 退出登录（一次性清除员工/旧版后台/访客三种会话 cookie，见 adminAuth.clearAllAuthCookies）
 router.post('/logout', (req, res) => {
-  adminAuth.clearTeamCookie(res);
-  adminAuth.clearCookie(res);
+  adminAuth.clearAllAuthCookies(res);
   res.json({ ok: true });
 });
 

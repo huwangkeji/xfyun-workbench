@@ -46,6 +46,19 @@
           开启前需先设置访客密码；关闭后工作台恢复开放。<b>后台登录态默认放行工作台</b>（Owner 无需重复输入）。密码 scrypt 哈希存储；同 IP 连续 5 次密码错误锁定 60 秒；会话有效期 12 小时。
         </div>
       </div>
+      <!-- 界面显示设置 -->
+      <div class="card" id="uiDisplayCard">
+        <div class="card-title">界面显示设置</div>
+        <div class="row-2" style="align-items:flex-end">
+          <label class="field" style="display:flex;align-items:center;gap:8px">
+            <input type="checkbox" id="ui_showModelName" /> <span>前端面板显示模型名字：侧栏配置下拉与对话头部显示「配置名 · 模型名」</span>
+          </label>
+          <button class="btn primary" id="saveUiDisplayBtn">保存</button>
+        </div>
+        <div class="hint" style="margin-top:6px">
+          关闭后前端面板只显示配置名称（如「星火」），不再展示模型 ID（如 spark-x2.6）；对话气泡下方的响应明细仍会显示实际模型。默认开启。
+        </div>
+      </div>
       <div class="card" id="schedCard">
         <div class="card-title">多 API 调度策略</div>
         <div class="row-2" style="align-items:flex-end">

@@ -57,8 +57,10 @@ router.post('/logout', (req, res) => {
   if (user) {
     auditService.log(user, auditService.ACTIONS.LOGOUT, `auth:${user.username}`, '', auditService.ipOf(req));
   }
-  adminAuth.clearTeamCookie(res);
-  adminAuth.clearCookie(res);
+  // 三种会话 cookie 一次性全部清除（team_token / admin_token / wb_token），
+  // 少任何一个都会出现「退了等于没退」—— historically clearTeamCookie+clearCookie
+  // 因 setHeader 覆盖语义只剩后者生效（见 adminAuth.appendCookie 注释）。
+  adminAuth.clearAllAuthCookies(res);
   res.json({ ok: true });
 });
 
@@ -107,8 +109,7 @@ router.put('/password', asyncHandler(async (req, res) => {
   if (!r.ok) {
     return res.status(400).json({ ok: false, error: r.error });
   }
-  adminAuth.clearTeamCookie(res);
-  adminAuth.clearCookie(res);
+  adminAuth.clearAllAuthCookies(res);
   auditService.log(req.user, auditService.ACTIONS.PASSWORD_CHANGE, `auth:${req.user.username}`, '自助改密，会话已失效', auditService.ipOf(req));
   res.json({ ok: true, message: '密码已修改，请使用新密码重新登录' });
 }));

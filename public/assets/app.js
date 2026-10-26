@@ -48,9 +48,14 @@ const els = {
 
 let configs = [];
 let currentConfigId = null;
+// 后台「界面显示设置」：前端面板是否显示模型名字（默认显示；关闭后只显示配置名称）
+let uiSettings = { showModelName: true };
 let conversations = [];   // 会话元信息列表
 let currentConv = null;   // 当前会话 {id, title, messages}
 let sending = false;
+let chatAbort = null;     // 当前发送的 AbortController（停止按钮用）
+let isViewer = false;     // 只读成员（禁用发送；setBusy 恢复时保持禁用）
+let modelSwitchNotice = null; // 「已切换模型」对话框提示节点
 
 /* ================= 会话参数（深度思考 / 思考强度 / 联网 / 系统提示） =================
  * 用户手动改过的项存 localStorage（记住选择）；未手动改过的项跟随当前 API 配置的默认值。
@@ -207,6 +212,8 @@ async function api(path, options = {}) {
       ...options
     });
   } catch (e) {
+    // 用户点「停止」主动中止：保留 AbortError 语义，别包装成"无法连接"（调用方据此区分）
+    if (e && e.name === 'AbortError') throw e;
     // fetch 在网络层失败：服务未启动 / 端口不通 / 连接被重置（进程崩溃）
     const err = new Error('无法连接后端服务，请确认服务已启动（默认 http://127.0.0.1:4000，双击「启动.bat」或执行 npm start）');
     err.network = true;
@@ -220,7 +227,8 @@ async function api(path, options = {}) {
       setTimeout(() => { location.href = '/login'; }, 900);
     } else {
       toast('登录已失效，请重新登录', 'error');
-      setTimeout(() => { location.href = '/team-login'; }, 900);
+      // 带当前页回跳：重新登录后直接回到原页面（如 /admin），不用手动找入口
+      setTimeout(() => { location.href = '/team-login?next=' + encodeURIComponent(location.pathname); }, 900);
     }
     const e = new Error(data.error || '未登录');
     e.status = 401;
@@ -320,14 +328,14 @@ function uploadImage(item) {
     try { data = JSON.parse(xhr.responseText || '{}'); } catch (_) { data = {}; }
     if (xhr.status === 401) {
       // 与 api() 一致：访客密码 → /login；员工会话失效 → /team-login
-      if (data.code === 'WB_AUTH_REQUIRED') {
-        toast('请先输入工作台密码', 'error');
-        setTimeout(() => { location.href = '/login'; }, 900);
-      } else {
-        toast('登录已失效，请重新登录', 'error');
-        setTimeout(() => { location.href = '/team-login'; }, 900);
-      }
-      item.status = 'error';
+    if (data.code === 'WB_AUTH_REQUIRED') {
+      toast('请先输入工作台密码', 'error');
+      setTimeout(() => { location.href = '/login'; }, 900);
+    } else {
+      toast('登录已失效，请重新登录', 'error');
+      setTimeout(() => { location.href = '/team-login?next=' + encodeURIComponent(location.pathname); }, 900);
+    }
+    item.status = 'error';
       item.error = '未登录';
     } else if (xhr.status >= 200 && xhr.status < 300 && data.ok && data.data && data.data.files && data.data.files[0]) {
       const f = data.data.files[0];
@@ -474,6 +482,8 @@ function contentParts(content) {
 async function loadConfigs() {
   try {
     configs = await api('/api/configs');
+    // 界面显示设置（GET 开放）：控制面板是否拼接模型名字
+    try { uiSettings = await api('/api/configs/settings'); } catch (_) { /* 读不到用默认（显示） */ }
   } catch (e) {
     toast(`加载配置失败：${e.message}`, 'error');
     configs = [];
@@ -488,7 +498,7 @@ async function loadConfigs() {
     for (const c of configs) {
       const opt = document.createElement('option');
       opt.value = c._id;
-      opt.textContent = `${c.name} · ${c.model}`;
+      opt.textContent = configLabel(c);
       opt.selected = c._id === currentConfigId;
       els.configSelect.appendChild(opt);
     }
@@ -500,9 +510,15 @@ async function loadConfigs() {
   loadConversations();
 }
 
+/** 配置在面板上的展示名：后台开关关闭时只显示配置名称，不拼接模型名字 */
+function configLabel(c) {
+  if (!c) return '未选择配置';
+  return uiSettings.showModelName === false ? c.name : `${c.name} · ${c.model}`;
+}
+
 function updateConfigLabel() {
   const c = configs.find((x) => x._id === currentConfigId);
-  els.curConfigName.textContent = c ? `${c.name} · ${c.model}` : '未选择配置';
+  els.curConfigName.textContent = configLabel(c);
 }
 
 els.configSelect.addEventListener('change', () => {
@@ -512,6 +528,8 @@ els.configSelect.addEventListener('change', () => {
   const cfg = configs.find((c) => c._id === currentConfigId);
   applyConfigDefaults(cfg);
   renderParams();
+  // 在对话框里提示本次切换（下一条消息起生效；发送后自动清除）
+  showModelSwitchNotice(configLabel(cfg));
 });
 
 /* ================= 会话管理 ================= */
@@ -630,6 +648,7 @@ const msgState = { views: new Map(), fbPending: new Set() };
 
 function renderMessages() {
   els.messages.innerHTML = '';
+  removeModelSwitchNotice(); // 重渲染消息列表时清掉切换提示（它不属于会话内容）
   const list = (currentConv && currentConv.messages) || [];
   if (!list.length) {
     els.messages.innerHTML = '<div class="empty">开始新的对话：在下方输入消息。系统提示/参数可在后台管理配置。</div>';
@@ -830,7 +849,18 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAllCo
 
 function setBusy(busy, hint = '') {
   sending = busy;
-  els.sendBtn.disabled = busy;
+  // 发送键在等待期间变为「停止」键：一点即中止本次请求
+  if (busy) {
+    els.sendBtn.textContent = '⏹ 停止';
+    els.sendBtn.disabled = false;
+    els.sendBtn.classList.add('danger');
+    els.sendBtn.title = '停止当前请求（服务端调用仍会完成）';
+  } else {
+    els.sendBtn.textContent = '发送';
+    els.sendBtn.disabled = isViewer; // 只读成员保持禁用
+    els.sendBtn.classList.remove('danger');
+    els.sendBtn.title = '';
+  }
   els.statusLine.innerHTML = busy ? `<span class="spinner"></span> ${hint}` : '';
   if (busy) {
     const t = document.createElement('div');
@@ -843,6 +873,29 @@ function setBusy(busy, hint = '') {
     const t = document.getElementById('typingIndicator');
     t && t.remove();
   }
+}
+
+/** 停止当前发送：中止 fetch 等待（服务端上游调用仍会跑完并计费，属非流式接口的固有行为） */
+function abortChat() {
+  if (chatAbort) chatAbort.abort();
+}
+
+/** 在对话框里放一条「已切换模型」提示（同一条会话内切换配置时调用；发送下一条消息或再次切换时清除） */
+function showModelSwitchNotice(label) {
+  removeModelSwitchNotice();
+  const div = document.createElement('div');
+  div.className = 'model-switch-notice';
+  div.id = 'modelSwitchNotice';
+  div.textContent = `🔄 已切换模型：${label}（下一条消息起使用新模型）`;
+  els.messages.appendChild(div);
+  els.messages.scrollTop = els.messages.scrollHeight;
+  modelSwitchNotice = div;
+}
+
+function removeModelSwitchNotice() {
+  if (modelSwitchNotice) { modelSwitchNotice.remove(); modelSwitchNotice = null; }
+  const old = document.getElementById('modelSwitchNotice');
+  if (old) old.remove();
 }
 
 // 当前会话用于上下文的对话历史（仅 user/assistant，system 由后端按配置注入）
@@ -928,15 +981,18 @@ async function send() {
   autoGrow();
   pendingImages = []; // 先清空待发列表（内容已并入消息体）
   renderAttachRow();
+  removeModelSwitchNotice(); // 切换提示已使命（下一条消息起用新模型）
   addMsg('user', userContent);
 
   const history = convoHistory();
   history.push({ role: 'user', content: userContent });
 
-  setBusy(true, '请求星火 API…');
+  chatAbort = new AbortController();
+  setBusy(true, '服务进行中…');
   try {
     const data = await api('/api/chat', {
       method: 'POST',
+      signal: chatAbort.signal,
       body: JSON.stringify({
         configId: currentConfigId,
         messages: history,
@@ -981,13 +1037,22 @@ async function send() {
     }
   } catch (e) {
     await persistMessages([{ role: 'user', content: userContent }]);
-    addMsg('assistant', `调用失败：${e.message}`, { error: true });
+    if (e && e.name === 'AbortError') {
+      // 用户点了「停止」：保留已发送的用户消息，标注中止
+      addMsg('assistant', '已停止生成', { meta: '已手动停止；服务端调用仍会完成并计费' });
+    } else {
+      addMsg('assistant', `调用失败：${e.message}`, { error: true });
+    }
   } finally {
+    chatAbort = null;
     setBusy(false);
   }
 }
 
-els.sendBtn.addEventListener('click', send);
+els.sendBtn.addEventListener('click', () => {
+  if (sending) { abortChat(); return; } // 等待期间发送键即停止键
+  send();
+});
 els.input.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
@@ -1145,6 +1210,7 @@ async function initTeamAuth() {
       }
       // viewer 为只读角色：禁用发送
       if (u.role === 'viewer') {
+        isViewer = true;
         els.sendBtn.disabled = true;
         els.sendBtn.title = '只读成员不能发起对话，请联系管理员调整角色';
         els.input.disabled = true;

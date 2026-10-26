@@ -81,6 +81,7 @@ router.put('/settings', (req, res) => {
     if (before.cooldownSec !== result.data.cooldownSec) changes.push(`冷却 ${before.cooldownSec}s → ${result.data.cooldownSec}s`);
     if (before.workbenchAuthEnabled !== result.data.workbenchAuthEnabled) changes.push(`访客密码保护 ${result.data.workbenchAuthEnabled ? '开' : '关'}`);
     if (result.data.allowSelfRegister !== undefined && before.allowSelfRegister !== result.data.allowSelfRegister) changes.push(`开放注册 ${result.data.allowSelfRegister ? '开' : '关'}`);
+    if (before.showModelName !== result.data.showModelName) changes.push(`前端显示模型名字 ${result.data.showModelName ? '开' : '关'}`);
     auditService.log(req.user, auditService.ACTIONS.CONFIG_SETTINGS, 'settings', changes.join('；') || '无变化', auditService.ipOf(req));
   }
   res.json(result);

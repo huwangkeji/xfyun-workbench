@@ -193,14 +193,29 @@ function update(id, patch = {}, actor = null) {
     next._tempPassword = temp; // 仅本次返回给操作者，不落库
   }
 
+  // 直接指定新密码（密码重置脚本 / 运维场景）：同样 bump passwordUpdatedAt
+  // （旧 team_token 签名绑定该字段，改密即失效全部旧会话），默认下次登录强制改密
+  if (patch.password !== undefined) {
+    const pErr = validatePassword(patch.password);
+    if (pErr) errors.push(pErr);
+    else {
+      next.passwordHash = adminAuth.hashPassword(patch.password);
+      next.passwordUpdatedAt = now;
+      next.mustChangePassword = patch.mustChangePassword === undefined ? true : !!patch.mustChangePassword;
+      next._setPassword = patch.password; // 仅本次返回，不落库
+    }
+  }
+
   if (errors.length) return { ok: false, errors };
 
   next.updatedAt = now;
   const tempPassword = next._tempPassword;
+  const setPassword = next._setPassword;
   delete next._tempPassword;
+  delete next._setPassword;
   data.users[data.users.indexOf(user)] = next;
   db.save();
-  return { ok: true, data: sanitize(next), tempPassword };
+  return { ok: true, data: sanitize(next), tempPassword, setPassword };
 }
 
 /** 停用 / 启用（update 的薄封装，语义更直白） */
@@ -232,6 +247,13 @@ function clearUserFails(username) {
   userFailMap.delete(username);
 }
 
+/** 用户名锁定剩余秒数（未锁定返回 0） */
+function userLockRemainSec(username) {
+  const rec = userFailMap.get(username);
+  if (!rec || !rec.until || rec.until <= Date.now()) return 0;
+  return Math.ceil((rec.until - Date.now()) / 1000);
+}
+
 /**
  * 员工登录校验（不发 cookie，由路由层签发）
  * @returns {{ok:true, user:object}|{ok:false, error:string, locked?:boolean}}
@@ -239,14 +261,14 @@ function clearUserFails(username) {
 function login(req, { username, password }) {
   const ip = (req && (req.ip || req.socket.remoteAddress)) || 'unknown';
   if (adminAuth.isLocked(ip)) {
-    return { ok: false, error: '尝试次数过多，请 60 秒后再试', locked: true };
+    return { ok: false, error: `尝试次数过多，请 ${adminAuth.lockRemainSec(ip)} 秒后再试`, locked: true };
   }
   const uname = String(username || '').trim().toLowerCase();
   if (!uname || typeof password !== 'string' || !password) {
     return { ok: false, error: '请输入用户名和密码' };
   }
   if (isUserLocked(uname)) {
-    return { ok: false, error: '该账号失败次数过多，请 5 分钟后再试', locked: true };
+    return { ok: false, error: `该账号失败次数过多，请 ${userLockRemainSec(uname)} 秒后再试`, locked: true };
   }
 
   const user = getByUsername(uname);
@@ -383,6 +405,7 @@ module.exports = {
   login,
   changePassword,
   isUserLocked,
+  userLockRemainSec,
   registerUserFail,
   clearUserFails,
   bootstrapMigrate

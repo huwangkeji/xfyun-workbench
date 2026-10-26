@@ -37,6 +37,26 @@ function fakeReq(ip = '127.0.0.1') {
   return { ip, socket: { remoteAddress: ip }, headers: {} };
 }
 
+/** 模拟 Express res 的 cookie 能力（append 语义：多次写不互相覆盖） */
+function fakeRes() {
+  const headers = {};
+  return {
+    headers,
+    setHeader(name, value) { headers[name] = value; },
+    getHeader(name) { return headers[name]; },
+    append(name, value) {
+      const prev = headers[name];
+      headers[name] = prev === undefined ? value : (Array.isArray(prev) ? prev.concat(value) : [prev, value]);
+    }
+  };
+}
+
+/** 取出响应中全部 Set-Cookie（归一为数组） */
+function setCookies(res) {
+  const h = res.headers['Set-Cookie'];
+  return h === undefined ? [] : (Array.isArray(h) ? h : [h]);
+}
+
 test('迁移：旧后台密码 → owner 账号，历史数据打标，v1 兼容窗口', () => {
   const { db: d, adminAuth: a, userService: u } = freshModules();
   // 造一个「旧版」库：有 adminPasswordHash、有未打标会话
@@ -121,9 +141,9 @@ test('会话令牌：v2 只绑本人，改密/停用即时失效，篡改拒绝'
   const zs = u.getByUsername('zhangsan');
   const ls = u.getByUsername('lisi');
 
-  const res = { setHeader(name, value) { this.cookie = value; } };
+  const res = fakeRes();
   a.issueTeamCookie(res, zs);
-  const req = { headers: { cookie: res.cookie.split(';')[0] } };
+  const req = { headers: { cookie: setCookies(res)[0].split(';')[0] } };
 
   assert.ok(a.resolveTeamUser(req), '有效令牌应解析出用户');
   assert.equal(a.resolveTeamUser(req).id, zs.id);
@@ -133,9 +153,9 @@ test('会话令牌：v2 只绑本人，改密/停用即时失效，篡改拒绝'
   assert.equal(a.resolveTeamUser(req), null, '改密后旧令牌应失效');
 
   // 李四的令牌不受影响
-  const res2 = { setHeader(name, value) { this.cookie = value; } };
+  const res2 = fakeRes();
   a.issueTeamCookie(res2, ls);
-  const req2 = { headers: { cookie: res2.cookie.split(';')[0] } };
+  const req2 = { headers: { cookie: setCookies(res2)[0].split(';')[0] } };
   assert.ok(a.resolveTeamUser(req2), '他人会话不受影响');
 
   // 停用 → 令牌即时失效
@@ -262,4 +282,127 @@ test('db 原子写：临时文件不残留，内容完整', () => {
   assert.equal(fs.existsSync(path.join(DATA_DIR, 'db.json.tmp')), false, '不应残留 .tmp');
   const raw = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'db.json'), 'utf-8'));
   assert.equal(raw.configs[0].id, 'cfg_t');
+});
+
+test('界面显示设置：模型名字开关默认开、可关、补丁式不影响其他设置', () => {
+  const { configService: cs } = freshModules();
+  // 旧库无该字段 → 默认开启（保持既有展示行为）
+  assert.equal(cs.getSettings().showModelName, true);
+  // 关闭
+  let r = cs.updateSettings({ showModelName: false });
+  assert.ok(r.ok);
+  assert.equal(cs.getSettings().showModelName, false);
+  // 只提交该字段：其他设置不被清掉（updateSettings 为合并补丁）
+  assert.equal(cs.getSettings().autoSwitch, true);
+  assert.equal(cs.getSettings().cooldownSec, 30);
+  // 再次开启
+  r = cs.updateSettings({ showModelName: true });
+  assert.ok(r.ok);
+  assert.equal(cs.getSettings().showModelName, true);
+});
+
+test('对话分享：快照图片内联（日期子目录）、穿越拒绝、过期/撤销', () => {
+  const { userService: u, conversationService: c } = freshModules();
+  const share = require('../src/shareService'); // freshModules 之后 require：共用同一 db 缓存实例
+  u.bootstrapMigrate();
+
+  // 造一张真实上传文件：public/uploads/<日期>/<name>.png（与 upload.js 落盘结构一致）
+  const folder = new Date().toISOString().slice(0, 10);
+  const dir = path.join(__dirname, '..', 'public', 'uploads', folder);
+  const pngName = `img_share_test_${process.pid}.png`;
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, pngName), Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex'));
+  const imgUrl = `/uploads/${folder}/${pngName}`;
+
+  try {
+    const conv = c.create('带图分享', null);
+    c.appendMessages(conv.id, [
+      { role: 'user', content: [{ type: 'text', text: '看这张图' }, { type: 'image_url', image_url: { url: imgUrl } }] },
+      { role: 'assistant', content: '收到' }
+    ], null, null);
+
+    // 创建分享：图片必须内联为 data URI（回归：basename 曾剥掉日期子目录导致静默失败）
+    const rec = share.create(conv.id, { expiresInDays: 7, createdBy: 'owner' });
+    assert.ok(rec && rec.token, '应创建分享');
+    assert.equal(rec.snapshot.messageCount, 2, 'system 之外的消息都应进快照');
+    const imgPart = rec.snapshot.messages[0].content.find((p) => p.type === 'image_url');
+    assert.ok(imgPart.image_url.url.startsWith('data:image/png;base64,'), '图片应内联为 data URI');
+
+    // 目录穿越：恶意相对路径不得读到 uploads 之外的文件
+    const conv2 = c.create('穿越测试', null);
+    c.appendMessages(conv2.id, [{ role: 'user', content: [{ type: 'image_url', image_url: { url: '/uploads/../../data/db.json' } }] }], null, null);
+    const rec2 = share.create(conv2.id, { expiresInDays: 1 });
+    const bad = rec2.snapshot.messages[0].content[0];
+    assert.equal(bad.image_url.url.startsWith('data:'), false, '穿越 URL 不得被读取内联');
+
+    // 公开读 + 过期 + 撤销
+    const got = share.getByToken(rec.token);
+    assert.ok(got && !got.expired, '有效 token 应可读');
+    share.revoke(conv.id, rec.token);
+    assert.equal(share.getByToken(rec.token), null, '撤销后应读不到');
+    assert.equal(share.getByToken('short'), null, '非法 token 拒绝');
+  } finally {
+    // 只删本次测试造的文件，绝不删整个日期目录（同目录可能有真实上传）
+    fs.rmSync(path.join(dir, pngName), { force: true });
+  }
+});
+
+test('退出登录：三种会话 cookie 一次性清除（回归：Set-Cookie 覆盖致 team_token 残留）', () => {
+  const { adminAuth: a, userService: u } = freshModules();
+  a.bootstrap();
+  u.bootstrapMigrate();
+  u.create({ username: 'zhangsan', displayName: '张三', password: 'Pass1234', role: 'member' });
+  const zs = u.getByUsername('zhangsan');
+
+  // 同一响应里「签发」与「清除」必须共存——历史 bug：clearTeamCookie 后被
+  // clearCookie 用 setHeader 整条覆盖，team_token 永不被清，员工退出后会话依旧有效。
+  const res = fakeRes();
+  a.issueTeamCookie(res, zs);
+  a.clearTeamCookie(res);
+  assert.equal(setCookies(res).length, 2, '签发与清除必须各是一条 Set-Cookie，互不覆盖');
+
+  // clearAllAuthCookies：三个 cookie 同时出现在响应里，且都是立即过期
+  const res2 = fakeRes();
+  a.clearAllAuthCookies(res2);
+  const cookies = setCookies(res2);
+  assert.equal(cookies.length, 3, 'team_token / admin_token / wb_token 必须同时清除');
+  for (const name of ['team_token', 'admin_token', 'wb_token']) {
+    const hit = cookies.find((c) => c.startsWith(`${name}=;`) && c.includes('Max-Age=0'));
+    assert.ok(hit, `${name} 应被清除`);
+  }
+
+  // 浏览器删掉 cookie 后，原会话请求必须视为未登录
+  const live = fakeRes();
+  a.issueTeamCookie(live, zs);
+  const req = { headers: { cookie: setCookies(live)[0].split(';')[0] } };
+  assert.ok(a.resolveTeamUser(req), '清除前会话有效');
+  assert.equal(a.resolveTeamUser({ headers: {} }), null, '无 cookie 即未登录');
+});
+
+test('重置密码：随机/指定密码、强制改密、旧会话失效', () => {
+  const { adminAuth: a, userService: u } = freshModules();
+  a.bootstrap();
+  u.bootstrapMigrate();
+  const created = u.create({ username: 'zhangsan', displayName: '张三', password: 'Pass1234', role: 'member' });
+  const before = u.getById(created.data.id);
+
+  // 随机临时密码（后台「重置密码」/ reset-password.js 默认行为）
+  const r1 = u.update(created.data.id, { resetPassword: true });
+  assert.ok(r1.ok);
+  assert.ok(r1.tempPassword && r1.tempPassword.length >= 10, '应返回临时密码');
+  assert.equal(u.getById(created.data.id).mustChangePassword, true, '重置后下次登录强制改密');
+  assert.equal(u.getById(created.data.id).passwordUpdatedAt !== before.passwordUpdatedAt, true, 'passwordUpdatedAt 应 bump');
+  const r1Login = u.login(fakeReq(), { username: 'zhangsan', password: r1.tempPassword });
+  assert.ok(r1Login.ok, '临时密码应可登录');
+
+  // 指定密码（reset-password.js --password 行为），可选不强制改密
+  const r2 = u.update(created.data.id, { password: 'Mynewpass1', mustChangePassword: false });
+  assert.ok(r2.ok);
+  assert.equal(a.verifyPassword('Mynewpass1', u.getById(created.data.id).passwordHash), true, '指定密码应生效');
+  assert.equal(u.getById(created.data.id).mustChangePassword, false, '--no-force-change 生效');
+  assert.equal(u.login(fakeReq(), { username: 'zhangsan', password: 'Mynewpass1' }).ok, true);
+
+  // 弱密码拒绝（与 create/changePassword 同一套规则）
+  assert.equal(u.update(created.data.id, { password: '12345678' }).ok, false, '缺字母应拒绝');
+  assert.equal(u.update(created.data.id, { password: 'short1' }).ok, false, '过短应拒绝');
 });

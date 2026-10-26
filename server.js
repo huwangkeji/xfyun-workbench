@@ -115,13 +115,24 @@ app.get('/api/health', (req, res) => res.json({ ok: true, name: 'xfyun-workbench
 
 // 员工登录页（/team-login 与 /admin/login 双入口，已登录则分别跳工作台/后台）。
 // 注意：必须早于下方静态托管，否则会被 express.static 直接吐出而绕过守卫。
+
+// 登录后回跳目标校验：仅放行本站本地路径（防开放式跳转），/team-login、/login 不作为目标
+function safeNextPath(p) {
+  if (typeof p !== 'string' || p.length <= 1) return '/app';
+  if (p.charAt(0) !== '/' || p.charAt(1) === '/' || p.indexOf('\\') >= 0) return '/app';
+  if (p === '/team-login' || p === '/login') return '/app';
+  return p;
+}
+
 app.get('/team-login', (req, res) => {
-  if (adminAuth.resolveTeamUser(req)) return res.redirect('/app');
+  if (adminAuth.resolveTeamUser(req)) return res.redirect(safeNextPath(req.query.next));
   res.sendFile(path.join(__dirname, 'public', 'team-login.html'));
 });
+// 后台登录入口：未登录则带 next=/admin 去员工登录页，登录完成后直接进后台
+// （原先登录成功一律跳 /app，管理员常因此"登录了却找不到后台"）
 app.get('/admin/login', (req, res) => {
   if (adminAuth.resolveTeamUser(req)) return res.redirect('/admin');
-  res.sendFile(path.join(__dirname, 'public', 'team-login.html'));
+  return res.redirect('/team-login?next=' + encodeURIComponent('/admin'));
 });
 // 后台页面仅 owner/admin 可进入（member/viewer 从工作台/员工中心使用；数据隔离见 P2）
 function adminPageGuard(req, res, next) {

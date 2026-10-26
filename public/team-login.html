@@ -121,6 +121,32 @@
       function showChangeErr(msg) { changeErr.textContent = msg; changeErr.classList.add('show'); }
       function hideChangeErr() { changeErr.classList.remove('show'); }
 
+      /* ---------- 登录后目标页 ----------
+       * 背景：原先登录成功一律跳 /app，从 /admin/login 或 /admin 守卫过来的管理员
+       * 会被扔到工作台，找不到后台入口（表现为"登录没反应/进不去后台"）。
+       * 规则：?next= 优先（仅放行本站本地路径）→ 来源页推断（/admin、/me 守卫 302 时
+       * 带 Referer）→ 回退 /app。/team-login、/login 本身不作为目标，避免登录后循环。 */
+      function isSafeLocalPath(p) {
+        return typeof p === 'string'
+          && p.length > 1
+          && p.charAt(0) === '/'
+          && p.charAt(1) !== '/'          // 排除 //evil.com 协议相对 URL
+          && p.indexOf('\\') < 0          // 排除 /\evil.com 之类
+          && p.toLowerCase().indexOf('javascript:') < 0;
+      }
+      function safeNext() {
+        var next = '';
+        try { next = new URLSearchParams(location.search).get('next') || ''; } catch (_) { next = ''; }
+        if (!isSafeLocalPath(next)) {
+          try {
+            var ref = document.referrer ? new URL(document.referrer) : null;
+            if (ref && ref.origin === location.origin && isSafeLocalPath(ref.pathname)) next = ref.pathname;
+          } catch (_) { /* Referer 缺失/不可解析时忽略 */ }
+        }
+        if (!isSafeLocalPath(next) || next === '/team-login' || next === '/login') next = '/app';
+        return next;
+      }
+
       // 登录页状态：owner 是否仍是初始密码（无需登录的探测接口）
       var selfRegisterOn = false;
       fetch('/api/auth/setup-status')
@@ -197,7 +223,7 @@
           });
           var data = await resp.json().catch(function () { return {}; });
           if (resp.ok && data.ok) {
-            location.replace('/app');
+            location.replace(safeNext());
             return;
           }
           showRegErr(data.error || ('注册失败（HTTP ' + resp.status + '）'));
@@ -236,7 +262,7 @@
               switchPanel(true);
               return;
             }
-            location.replace('/app');
+            location.replace(safeNext());
             return;
           }
           showErr(data.error || ('登录失败（HTTP ' + resp.status + '）'));

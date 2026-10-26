@@ -56,8 +56,10 @@ router.put('/:id', asyncHandler(async (req, res) => {
 
   const patch = req.body || {};
   // 自操作保护优先于角色守卫（给明确文案，避免被「仅 owner 可管理」误导）
-  if (target.id === req.user.id && (patch.role !== undefined || patch.status !== undefined || patch.resetPassword)) {
-    if (patch.resetPassword) {
+  // 注意：password 与 resetPassword 一样列入保护——改自己的密码必须走 /api/auth/password
+  // （需验证当前密码），否则成员管理接口就成了跳过旧密码校验的改密旁路。
+  if (target.id === req.user.id && (patch.role !== undefined || patch.status !== undefined || patch.resetPassword || patch.password !== undefined)) {
+    if (patch.resetPassword || patch.password !== undefined) {
       return res.status(400).json({ ok: false, error: '如需修改自己的密码，请使用右上角「修改密码」' });
     }
     return res.status(400).json({ ok: false, error: patch.role !== undefined ? '不能修改自己的角色' : '不能停用自己' });
