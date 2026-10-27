@@ -5,8 +5,36 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>同聪星火 · 文本对话</title>
   <link rel="stylesheet" href="/assets/style.css" />
+  <script>
+    /* 移动端视口高度兜底（--app-h）：
+       部分浏览器（旧版 Android WebView / 微信 X5 等）不支持 dvh 单位，100vh 会把页面撑到
+       浏览器工具栏后面，导致吸底的输入区被挡住看不到。这里用 innerHeight 实时同步 --app-h，
+       工具栏显隐 / 横竖屏切换 / 键盘弹出时自动校正；不支持的浏览器仍回退 100dvh → 100vh。 */
+    (function () {
+      var root = document.documentElement;
+      var last = -1;
+      function set(h) { if (h > 0 && h !== last) { last = h; root.style.setProperty('--app-h', h + 'px'); } }
+      function sync() { set(window.innerHeight); }
+      sync();
+      window.addEventListener('resize', sync);
+      window.addEventListener('orientationchange', function () { setTimeout(sync, 250); });
+      /* 键盘弹出时（iOS / 布局视口不压缩的安卓）：用 visualViewport 校正，避免输入框被键盘盖住 */
+      var vv = window.visualViewport;
+      if (vv) {
+        var vvSync = function () {
+          if (vv.scale && vv.scale > 1.05) return; /* 捏合缩放时不跟随 */
+          if (document.activeElement === document.getElementById('input')) {
+            set(Math.min(vv.height, window.innerHeight));
+          }
+        };
+        vv.addEventListener('resize', vvSync);
+        document.addEventListener('focusin', function (e) { if (e.target && e.target.id === 'input') vvSync(); });
+        document.addEventListener('focusout', function (e) { if (e.target && e.target.id === 'input') sync(); });
+      }
+    })();
+  </script>
 </head>
-<body class="wb-page">
+<body class="wb-page has-more">
   <header class="topbar">
     <div class="brand">
       <span class="brand-title">同聪星火</span>
@@ -20,6 +48,8 @@
       <button class="btn" id="clearChatBtn">清空本会话</button>
       <a class="btn" href="/admin" id="adminLink">后台管理</a>
     </div>
+    <!-- 移动端「⋯ 更多」下拉开关（桌面端隐藏，顶栏动作区始终展开） -->
+    <button class="btn btn-sm top-more-btn" id="topMoreBtn" type="button" title="更多操作" aria-expanded="false">⋯</button>
   </header>
 
   <div class="workbench">
@@ -142,6 +172,7 @@
   </div>
 
   <script src="/assets/markdown.js"></script>
+  <script src="/assets/topbar-more.js"></script>
   <script src="/assets/app.js"></script>
 </body>
 </html>
