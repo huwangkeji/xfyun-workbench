@@ -1,8 +1,4 @@
-# 同聪星火 V2 · xfyun-workbench
-
-> 基于 **讯飞星辰 MaaS 平台模型服务 API** 的团队大模型对话工作台
-> 由 **沧州虎王科技** 开发并开源
-
+# 同聪星火 V3 · xfyun-workbench
 [![Node](https://img.shields.io/badge/Node-%3E%3D18-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![Express](https://img.shields.io/badge/Express-4.x-000000?logo=express&logoColor=white)](https://expressjs.com/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
