@@ -1,16 +1,40 @@
 {
   "name": "xfyun-workbench",
-  "version": "2.0.0",
-  "description": "同聪星火 V2 · 讯飞星辰 MaaS 团队大模型对话工作台（员工账号体系 / 角色权限 / 数据隔离 / 审计留痕）",
+  "version": "3.36.0",
+  "description": "星火工作台 · 可私有化部署的企业级 AI 对话平台：多模型接入 / 私有知识库 / 画布工作流 / 智能体 / MCP 与插件 / 团队权限与审计",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test test/core.test.js"
+    "test": "node --test test/core.test.js test/kb.test.js test/agent.test.js test/workflow.test.js test/appshare.test.js test/storage.test.js test/tts.test.js test/mcp.test.js"
   },
   "engines": {
     "node": ">=18"
   },
+  "keywords": [
+    "llm",
+    "ai-chat",
+    "chatbot",
+    "knowledge-base",
+    "rag",
+    "workflow",
+    "ai-agent",
+    "function-calling",
+    "mcp",
+    "self-hosted",
+    "xfyun",
+    "spark"
+  ],
+  "license": "MIT",
+  "author": "沧州氢境科技有限公司",
   "dependencies": {
     "express": "^4.19.2"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/huwangkeji/xfyun-workbench.git"
+  },
+  "bugs": {
+    "url": "https://github.com/huwangkeji/xfyun-workbench/issues"
+  },
+  "homepage": "https://github.com/huwangkeji/xfyun-workbench#readme"
 }

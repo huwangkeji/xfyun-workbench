@@ -40,7 +40,8 @@ router.post('/', asyncHandler(async (req, res) => {
     displayName: body.displayName,
     password: body.password,
     role,
-    note: body.note
+    note: body.note,
+    department: body.department
   }, req.user);
   if (!r.ok) {
     return res.status(400).json({ ok: false, errors: r.errors, error: (r.errors || []).join('；') });

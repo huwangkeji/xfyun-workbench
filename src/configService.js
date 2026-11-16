@@ -7,6 +7,13 @@ const adminAuth = require('./adminAuth'); // 工作台访客密码的哈希存�
 
 const DEFAULT_NAME = '星火开源模型';
 
+/* ================= 内置默认页面文案（服务协议 / 隐私政策） =================
+ * 后台「系统设置 → 页面管理」未自定义时展示内置默认；清空保存即恢复默认。
+ * 与登录页 team-login.html 展示一致。
+ */
+const DEFAULT_SERVICE_AGREEMENT = '欢迎使用本平台。使用本平台前，请仔细阅读以下条款：\n\n1. 账号使用：员工账号仅限本人使用，禁止转借、共享；账号下的所有操作视为本人行为。\n\n2. 合规使用：不得利用本平台从事违反法律法规、危害网络安全、侵犯他人合法权益的活动；不得输入或传播违法、淫秽、暴力等不良信息。\n\n3. AI 生成内容：模型输出由人工智能自动生成，可能存在错误或遗漏，仅供参考，不构成专业建议；重要决策请人工复核。\n\n4. 数据与隐私：对话数据保存在企业自部署的服务器中，管理员可按企业策略进行管理，请勿输入国家秘密、商业秘密或个人敏感信息。\n\n5. 服务变更：平台有权根据运营情况对服务进行调整、中断或终止，并尽可能提前公告。\n\n继续登录即视为您已阅读、理解并同意上述条款。';
+const DEFAULT_PRIVACY_POLICY = '我们高度重视用户隐私。本政策说明本平台对个人信息的处理方式：\n\n1. 收集范围：为提供登录与对话服务，本平台收集并存储您的用户名、登录时间、登录 IP、对话内容及相关日志。\n\n2. 使用目的：上述信息仅用于身份认证、账号安全、故障排查与用量统计，不用于任何对外营销。\n\n3. 存储位置：本平台为私有化部署，全部数据保存在企业自有服务器中，不出企业网络边界。\n\n4. 访问控制：对话数据按账号隔离，仅本人和管理员（依据企业管理策略）可访问；全量操作留痕可审计。\n\n5. 您的权利：如需更正或删除个人信息，请联系企业管理员处理。\n\n继续登录即视为您已阅读、理解并同意本隐私政策。';
+
 /* ================= API Key 静态加密（可选） =================
  * 设置环境变量 DB_ENCRYPT_KEY 后，写入 db.json 的 apiKey 以 AES-256-GCM 加密
  * （格式 enc:v1:<iv>.<tag>.<ct>，iv/tag/ct 均为 base64url）；
@@ -94,10 +101,17 @@ function maskKey(key) {
 
 function validateConfig(body) {
   const errors = [];
+  // 能力类型：chat 固定具备；vision 多模态视觉 / t2v 文生视频为标注项；tti 文生图由 ttiEnabled 联动
+  const CAP_SET = ['chat', 'vision', 't2v'];
+  const capsIn = Array.isArray(body.capabilities) ? body.capabilities : [];
+  const capabilities = CAP_SET.filter((c) => capsIn.includes(c));
   const cfg = {
     name: typeof body.name === 'string' && body.name.trim()
       ? body.name.trim()
       : DEFAULT_NAME,
+    // 接口风格：xfyun = 讯飞 MaaS（/v2/chat/completions，默认）；openai = OpenAI 兼容（/v1/chat/completions，
+    // 兼容 OpenAI / DeepSeek / Kimi / 通义 / 智谱 v4 等开放式平台）。URL 拼接规则见 src/xfyun.js chatUrl()
+    apiStyle: body.apiStyle === 'openai' ? 'openai' : 'xfyun',
     baseUrl: typeof body.baseUrl === 'string' && body.baseUrl.trim()
       ? body.baseUrl.trim().replace(/\/+$/, '')
       : 'https://maas-api.cn-huabei-1.xf-yun.com',
@@ -109,6 +123,7 @@ function validateConfig(body) {
     presencePenalty: clampNum(body.presencePenalty, -2, 2, 0),
     frequencyPenalty: clampNum(body.frequencyPenalty, -2, 2, 0),
     systemPrompt: typeof body.systemPrompt === 'string' ? body.systemPrompt.trim() : '',
+    capabilities,
     webSearch: !!body.webSearch,
     user: typeof body.user === 'string' ? body.user.trim() : '',
     enableThinking: !!body.enableThinking,
@@ -223,6 +238,8 @@ function fillFromEnv(cfg) {
 
 // 旧配置平滑兼容：缺失的新增字段补默认值
 const NEW_FIELD_DEFAULTS = {
+  apiStyle: 'xfyun',
+  capabilities: ['chat'],
   presencePenalty: 0,
   frequencyPenalty: 0,
   systemPrompt: '',
@@ -264,7 +281,14 @@ function getFull(id) {
   if (id === ENV_CONFIG_ID) return envConfig();
   const data = db.load();
   const cfg = data.configs.find((c) => c.id === id);
-  if (cfg) return fillFromEnv(normalizeConfig(cfg));
+  if (cfg) {
+    const full = fillFromEnv(normalizeConfig(cfg));
+    // ttiEnabled 联动能力标签
+    if (full.ttiEnabled && Array.isArray(full.capabilities) && !full.capabilities.includes('tti')) {
+      full.capabilities = [...full.capabilities, 'tti'];
+    }
+    return full;
+  }
   // 后台没有任何配置时，请求回落到环境变量配置（部署后配好 .env 即可直接调用）
   return data.configs.length ? null : envConfig();
 }
@@ -300,7 +324,58 @@ function getSettings() {
     // 开放自助注册（P3：默认关闭；开启后 /team-login 出现注册入口，注册角色固定为 member）
     allowSelfRegister: !!s.allowSelfRegister,
     // 前端面板是否显示模型名字（后台「界面显示设置」维护；关闭后只显示配置名称）
-    showModelName: s.showModelName === undefined ? true : !!s.showModelName
+    showModelName: s.showModelName === undefined ? true : !!s.showModelName,
+    // 通知公告（后台「通知公告」维护；工作台侧栏顶部展示）
+    announcement: s.announcement && typeof s.announcement === 'object'
+      ? {
+          enabled: !!s.announcement.enabled,
+          text: typeof s.announcement.text === 'string' ? s.announcement.text.slice(0, 500) : '',
+          updatedAt: s.announcement.updatedAt || ''
+        }
+      : { enabled: false, text: '', updatedAt: '' },
+    // 品牌设置（后台「系统设置」维护；全站顶部品牌名与底部版权动态生效）
+    siteName: typeof s.siteName === 'string' && s.siteName.trim() ? s.siteName.trim().slice(0, 30) : '同聪星火',
+    footerText: typeof s.footerText === 'string' ? s.footerText.trim().slice(0, 120) : '© 2026 沧州氢境科技有限公司 · 星火工作台',
+    // —— 门户首页文案（后台「系统设置」维护；空值回落页面内置默认）——
+    heroBadge: typeof s.heroBadge === 'string' ? s.heroBadge.trim().slice(0, 60) : '',
+    heroTitle: typeof s.heroTitle === 'string' ? s.heroTitle.trim().slice(0, 40) : '',
+    heroTitleHl: typeof s.heroTitleHl === 'string' ? s.heroTitleHl.trim().slice(0, 30) : '',
+    heroDesc: typeof s.heroDesc === 'string' ? s.heroDesc.trim().slice(0, 200) : '',
+    // —— 页脚附加信息 ——
+    contactEmail: typeof s.contactEmail === 'string' ? s.contactEmail.trim().slice(0, 60) : '',
+    icpBeian: typeof s.icpBeian === 'string' ? s.icpBeian.trim().slice(0, 60) : '',
+    policeBeian: typeof s.policeBeian === 'string' ? s.policeBeian.trim().slice(0, 60) : '',
+    // —— 默认主题（访客无本地偏好时生效）——
+    defaultTheme: s.defaultTheme === 'dark' ? 'dark' : 'light',
+    // —— 页面管理（登录页标语 / 服务协议 / 隐私政策；空 = 返回内置默认，便于后台直接编辑）——
+    loginTagline: typeof s.loginTagline === 'string' ? s.loginTagline.trim().slice(0, 60) : '',
+    serviceAgreement: typeof s.serviceAgreement === 'string' && s.serviceAgreement.trim()
+      ? s.serviceAgreement.slice(0, 20000)
+      : DEFAULT_SERVICE_AGREEMENT,
+    privacyPolicy: typeof s.privacyPolicy === 'string' && s.privacyPolicy.trim()
+      ? s.privacyPolicy.slice(0, 20000)
+      : DEFAULT_PRIVACY_POLICY,
+    // —— 文件上传限制（后台「文件上传配置」维护；对员工端知识库文件/对话附件上传生效）——
+    uploadLimits: normalizeUploadLimits(s.uploadLimits)
+  };
+}
+
+/** 规范化文件上传限制配置，缺省回落内置默认 */
+const DEFAULT_KB_EXTS = ['txt', 'md', 'markdown', 'log', 'csv', 'json', 'pdf', 'docx'];
+const DEFAULT_ATTACH_EXTS = ['txt', 'md', 'csv', 'json', 'log', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'mp3', 'wav', 'ogg', 'm4a', 'flac', 'mp4', 'mov', 'webm', 'zip', 'rar', '7z'];
+function normalizeUploadLimits(ul) {
+  const o = ul && typeof ul === 'object' ? ul : {};
+  const kb = o.kb && typeof o.kb === 'object' ? o.kb : {};
+  const att = o.attachment && typeof o.attachment === 'object' ? o.attachment : {};
+  return {
+    kb: {
+      exts: Array.isArray(kb.exts) && kb.exts.length ? kb.exts.map((e) => String(e).toLowerCase()).filter(Boolean).slice(0, 50) : [...DEFAULT_KB_EXTS],
+      maxBytes: Number.isFinite(Number(kb.maxBytes)) && Number(kb.maxBytes) > 0 ? Math.floor(Number(kb.maxBytes)) : 2 * 1024 * 1024
+    },
+    attachment: {
+      exts: Array.isArray(att.exts) && att.exts.length ? att.exts.map((e) => String(e).toLowerCase()).filter(Boolean).slice(0, 50) : [...DEFAULT_ATTACH_EXTS],
+      maxBytes: Number.isFinite(Number(att.maxBytes)) && Number(att.maxBytes) > 0 ? Math.floor(Number(att.maxBytes)) : 20 * 1024 * 1024
+    }
   };
 }
 
@@ -331,6 +406,44 @@ function updateSettings(body) {
   // —— 前端界面显示：模型名字开关（默认开；关闭后工作台只显示配置名称）——
   if (body.showModelName !== undefined) {
     next.showModelName = !!body.showModelName;
+  }
+  // —— 通知公告（文本 + 开关一起提交；正文 ≤500 字符）——
+  if (body.announcement !== undefined && typeof body.announcement === 'object') {
+    next.announcement = {
+      enabled: !!body.announcement.enabled,
+      text: typeof body.announcement.text === 'string' ? body.announcement.text.trim().slice(0, 500) : '',
+      updatedAt: new Date().toISOString()
+    };
+  }
+  // —— 品牌设置（站点名称 / 底部版权）——
+  if (body.siteName !== undefined) {
+    const sn = String(body.siteName || '').trim().slice(0, 30);
+    next.siteName = sn || '同聪星火'; // 清空回落默认，避免站点名丢失
+  }
+  if (body.footerText !== undefined) {
+    next.footerText = String(body.footerText || '').trim().slice(0, 120);
+  }
+  // —— 门户首页文案（空 = 恢复页面内置默认）——
+  for (const k of ['heroBadge', 'heroTitle', 'heroTitleHl', 'heroDesc', 'contactEmail', 'icpBeian', 'policeBeian']) {
+    if (body[k] !== undefined) next[k] = String(body[k] || '').trim().slice(0, k === 'heroDesc' ? 200 : 60);
+  }
+  // —— 默认主题（dark/light；仅影响无本地偏好的访客）——
+  if (body.defaultTheme !== undefined) {
+    next.defaultTheme = body.defaultTheme === 'dark' ? 'dark' : 'light';
+  }
+  // —— 页面管理（登录页标语 / 服务协议 / 隐私政策；空 = 恢复内置默认）——
+  if (body.loginTagline !== undefined) {
+    next.loginTagline = String(body.loginTagline || '').trim().slice(0, 60);
+  }
+  if (body.serviceAgreement !== undefined) {
+    next.serviceAgreement = String(body.serviceAgreement || '').trim().slice(0, 20000);
+  }
+  if (body.privacyPolicy !== undefined) {
+    next.privacyPolicy = String(body.privacyPolicy || '').trim().slice(0, 20000);
+  }
+  // —— 文件上传限制（知识库文件 / 对话附件）——
+  if (body.uploadLimits !== undefined) {
+    next.uploadLimits = normalizeUploadLimits({ ...current.uploadLimits, ...body.uploadLimits });
   }
   db.load().settings = { ...db.load().settings, ...next };
   db.save();
@@ -409,6 +522,8 @@ module.exports = {
   update,
   remove,
   activate,
+  validateConfig,
+  normalizeConfig,
   encryptApiKey,
   decryptApiKey,
   checkEncryptionState

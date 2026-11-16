@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title data-brand="siteTitle" data-template="帮助中心 · {site}">帮助中心 · 同聪星火</title>
+  <script>
+    /* 主题初始化：v2 起默认浅色；旧默认深色一次性迁移（与 home.html 同逻辑） */
+    try {
+      var _t = localStorage.getItem('wb_theme');
+      if (!localStorage.getItem('wb_theme_v2')) {
+        if (!_t || _t === 'dark') { _t = 'light'; localStorage.setItem('wb_theme', 'light'); }
+        localStorage.setItem('wb_theme_v2', '1');
+      }
+      document.documentElement.dataset.theme = _t || 'light';
+    } catch (_) { document.documentElement.dataset.theme = 'light'; }
+  </script>
+  <link rel="stylesheet" href="/assets/style.css" />
+</head>
+<body class="admin-shell">
+  <aside class="side-nav" id="sideNav">
+    <div class="side-brand">
+      <div class="brand-logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+          <path d="M12 8l1.1 2.4L15.5 11.5l-2.4 1.1L12 15l-1.1-2.4L8.5 11.5l2.4-1.1z" fill="#fff" stroke="none"/>
+        </svg>
+      </div>
+      <div>
+        <b data-brand="siteName">同聪星火</b>
+        <span>帮助中心</span>
+      </div>
+    </div>
+    <nav>
+      <div class="nav-group">本页导航</div>
+      <a href="#quick"><span class="nav-item" style="display:flex"><span class="nav-ico">🚀</span>快速上手</span></a>
+      <a href="#agents"><span class="nav-item" style="display:flex"><span class="nav-ico">🤖</span>智能助手与知识库</span></a>
+      <a href="#share"><span class="nav-item" style="display:flex"><span class="nav-ico">🔗</span>分享与协作</span></a>
+      <a href="#faq"><span class="nav-item" style="display:flex"><span class="nav-ico">❓</span>常见问题</span></a>
+    </nav>
+    <div class="side-foot">
+      <a href="/app">💬 返回工作台</a>
+      <a href="/">🏠 门户首页</a>
+      <button class="btn theme-btn" data-theme-toggle type="button">☀️ 切换日间模式</button>
+    </div>
+  </aside>
+
+  <div class="admin-main">
+    <header class="page-head">
+      <button class="btn btn-sm side-toggle" id="sideToggle" type="button" title="菜单">☰</button>
+      <h1 class="page-title">帮助中心</h1>
+      <span class="spacer"></span>
+      <div class="top-actions">
+        <a class="btn" href="/app">返回工作台</a>
+      </div>
+    </header>
+
+    <main class="admin-content">
+      <div class="help-wrap">
+        <div class="help-hero">
+          <h1><span data-brand="siteName">同聪星火</span>使用指南</h1>
+          <p>团队大模型对话工作台 · 私有化部署 · 数据在自己手里</p>
+        </div>
+
+        <div class="help-card" id="quick">
+          <h2>🚀 快速上手</h2>
+          <ol>
+            <li>管理员在 <a href="/admin">后台管理 → 模型配置</a> 添加模型配置（API 地址 / Key / 模型名），第一个配置自动设为默认。</li>
+            <li>进入 <a href="/app">工作台</a>，左侧选择 模型配置，点击「＋ 新增对话」。</li>
+            <li>输入问题，<kbd>Enter</kbd> 发送，<kbd>Shift</kbd>+<kbd>Enter</kbd> 换行。</li>
+            <li><kbd>Ctrl</kbd>+<kbd>V</kbd> 直接粘贴图片，或拖拽 / 点击 📎 上传（单张 ≤8MB，最多 9 张）。</li>
+          </ol>
+        </div>
+
+        <div class="help-card" id="agents">
+          <h2>🤖 智能助手与知识库</h2>
+          <ul>
+            <li><b>智能助手</b>：侧栏「智能助手」下拉选择角色（售前顾问、周报生成、会议纪要等），角色设定自动注入对话；可在「📝 系统提示」中微调。</li>
+            <li><b>深度思考</b>：开启后模型推理更充分，耗时更长；强度 high 均衡 / max 最强。</li>
+            <li><b>联网搜索</b>：按次开关，获取实时信息。</li>
+            <li><b>知识库</b>：开启并选择库后，每次提问自动检索最相关的分段注入上下文（需管理员在后台「知识库」导入资料；仅登录员工可用）。</li>
+            <li>以上设置都会<b>记住选择</b>，下次进入无需重设。</li>
+          </ul>
+        </div>
+
+        <div class="help-card" id="share">
+          <h2>🔗 分享与协作</h2>
+          <ul>
+            <li>对话头部「🔗 分享对话」生成只读链接（快照内容，继续对话不影响已发出的链接），可选 7 / 30 / 90 天或永久，可随时撤销。</li>
+            <li>发现链接泄露：分享弹窗中「撤销」即刻失效。</li>
+            <li>成员管理（后台）：创建 / 停用员工账号，四级角色权限（owner / admin / member / viewer），数据按人隔离。</li>
+          </ul>
+        </div>
+
+        <div class="help-card" id="faq">
+          <h2>❓ 常见问题</h2>
+          <ul>
+            <li><b>提示「扣费失败 / 上游限流」？</b> 多配置自动调度会在故障时切换备用配置；确认 API Key 有效与余额。</li>
+            <li><b>想换对话模型？</b> 侧栏「选中的模型配置」切换；不同配置可绑定不同模型与参数。</li>
+            <li><b>忘记员工密码？</b> 联系管理员在后台「成员管理 → 重置密码」，或双击 启动.bat 选 [4] 自助重置 owner 密码。</li>
+            <li><b>历史会话在哪？</b> 工作台侧栏「会话」列表；管理员可在后台「记忆管理」检索全部会话。</li>
+            <li><b>数据存在哪？</b> 本地 data/db.json（原子写），API Key 可选加密存储；无第三方上报。</li>
+          </ul>
+        </div>
+      </div>
+    </main>
+    <footer class="app-footer" data-brand="footerText">© 2026 沧州氢境科技有限公司 · 星火工作台</footer>
+  </div>
+
+  <script src="/assets/branding.js"></script>
+  <script src="/assets/branding.js"></script>
+  <script src="/assets/theme.js"></script>
+  <script>
+    (function () {
+      var toggle = document.getElementById('sideToggle');
+      if (!toggle) return;
+      toggle.addEventListener('click', function () {
+        // 窄屏下帮助中心无侧栏抽屉需求时保持无操作；为一致性仍支持开合
+        document.body.classList.toggle('side-open');
+      });
+    })();
+  </script>
+</body>
+</html>

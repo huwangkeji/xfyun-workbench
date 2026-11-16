@@ -98,6 +98,8 @@ function addShareMsg(role, content, time) {
   wrap.innerHTML = `
     <div class="avatar">${avatar}</div>
     <div class="msg-main">
+      <div class="msg-body">${bodyHtml}${imgsHtml}</div>
+      <div class="msg-foot">
       <div class="msg-tools">
         <div class="copy-group">
           <button class="tool-btn" data-act="copy" title="复制">⧉ 复制</button>
@@ -108,8 +110,8 @@ function addShareMsg(role, content, time) {
         </div>
         <button class="tool-btn" data-act="source" title="查看 / 还原 Markdown 原文">&lt;/&gt;</button>
       </div>
-      <div class="msg-body">${bodyHtml}${imgsHtml}</div>
       <div class="meta">${esc(shortTime(time))}</div>
+      </div>
     </div>`;
 
   const group = wrap.querySelector('.copy-group');

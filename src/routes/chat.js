@@ -9,11 +9,14 @@ const configService = require('../configService');
 const scheduler = require('../scheduler');
 const logService = require('../logService');
 const imageUtil = require('../imageUtil');
+const kbService = require('../kbService');
 const asyncHandler = require('../asyncHandler');
+const agentService = require('../agentService');
+const agentTools = require('../agentTools');
 const router = express.Router();
 
 /** 粘贴上传图片的落盘根目录（与 src/routes/upload.js 一致） */
-const UPLOAD_ROOT = path.join(__dirname, '..', '..', 'public', 'uploads');
+const UPLOAD_ROOT = process.env.XFYUN_UPLOAD_DIR || path.join(__dirname, '..', '..', 'public', 'uploads');
 
 /**
  * 把消息中的 /uploads/ 图片 URL 换成 base64 data URI 后再发给上游。
@@ -82,17 +85,150 @@ function validateMessages(messages) {
   return null;
 }
 
-// 按配置注入系统提示（已有 system 消息则不重复注入）
+// 按配置注入系统提示（已有 system 消息则不重复注入；kb:true 的知识库消息不算数，
+// 否则知识注入会顶掉配置里的系统提示）
 // customSystemPrompt：前台「系统提示」输入框的值（字符串）——显式提供时覆盖配置默认；
 //   空串表示用户清空（不注入）；undefined 表示前台未传，回退配置值。
 function withSystemPrompt(messages, cfg, customSystemPrompt) {
   const list = messages.slice();
-  if (list.some((m) => m.role === 'system')) return list;
+  if (list.some((m) => m.role === 'system' && !m.kb)) return list;
   const sp = customSystemPrompt !== undefined && customSystemPrompt !== null
     ? String(customSystemPrompt)
     : (cfg && cfg.systemPrompt);
   if (sp) list.unshift({ role: 'system', content: sp });
   return list;
+}
+
+/* ---------- 知识库检索注入 ----------
+ * 前台传 kbId（且为登录员工）时，按最后一问检索知识库，取 TopK 分段拼成
+ * 知识块 system 消息（kb:true 标记）插入消息最前。块排在配置系统提示之后生效：
+ * withSystemPrompt 会把配置系统提示 unshift 到 index 0，知识块自然退居其后。
+ */
+function extractQueryText(messages) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (!m || m.role !== 'user') continue;
+    if (typeof m.content === 'string') return m.content;
+    if (Array.isArray(m.content)) {
+      const texts = m.content
+        .filter((p) => p && p.type === 'text' && typeof p.text === 'string')
+        .map((p) => p.text);
+      if (texts.length) return texts.join('\n');
+    }
+  }
+  return '';
+}
+
+function formatKbBlock(r) {
+  const lines = r.chunks.map((c, i) => `[${i + 1}] ${c.text}`).join('\n---\n');
+  return [
+    `以下内容来自知识库「${r.kbName}」的检索结果（共 ${r.chunks.length} 段），回答时优先依据这些资料；`,
+    '资料中没有的信息请如实说明，不要编造。引用时可用 [序号] 标注来源分段。',
+    '========================================',
+    lines
+  ].join('\n');
+}
+
+/**
+ * 按请求体注入知识库上下文（有检索命中时返回 true）
+ * @param {{topK?:number, minScore?:number}} kbOpts 应用级检索选项（引用上限/最低相关度）
+ * @returns {{injected:boolean, kbName:string, chunks:number, error:string|null}}
+ */
+function injectKnowledge(upstreamMessages, kbId, actor, kbOpts) {
+  if (!kbId || typeof kbId !== 'string') return { injected: false, kbName: '', chunks: 0, error: null };
+  if (!actor) {
+    return { injected: false, kbName: '', chunks: 0, error: '知识库功能仅对登录员工开放' };
+  }
+  // 私有库权限：仅创建者与 owner/admin 可在对话中注入
+  const kbMeta = kbService.get(kbId);
+  if (!kbMeta) return { injected: false, kbName: '', chunks: 0, error: '关联的知识库不存在或已被删除' };
+  if (!kbService.canUse({ id: kbMeta.id, visibility: kbMeta.visibility, ownerId: kbMeta.ownerId }, actor)) {
+    return { injected: false, kbName: kbMeta.name, chunks: 0, error: '该知识库为私有库，仅创建者与管理员可使用' };
+  }
+  const query = extractQueryText(upstreamMessages);
+  if (!query || !query.trim()) return { injected: false, kbName: '', chunks: 0, error: null };
+  const o = kbOpts || {};
+  const r = kbService.search(kbId, query, o.topK, o.minScore);
+  if (!r.ok) {
+    return { injected: false, kbName: '', chunks: 0, error: r.notFound ? '关联的知识库不存在或已被删除' : (r.errors || []).join('；') };
+  }
+  if (!r.chunks.length) return { injected: false, kbName: r.kbName, chunks: 0, error: null };
+  upstreamMessages.unshift({ role: 'system', content: formatKbBlock(r), kb: true });
+  return { injected: true, kbName: r.kbName, chunks: r.chunks.length, error: null };
+}
+
+/** 应用参数变量：把用户填写的变量值拼成一段补充信息（追加在角色设定之后） */
+function applyAgentVariables(systemPrompt, variables, values) {
+  if (!Array.isArray(variables) || !variables.length) return systemPrompt;
+  const v = values && typeof values === 'object' ? values : {};
+  const lines = [];
+  for (const def of variables) {
+    const val = v[def.key];
+    if (val === undefined || val === null || String(val).trim() === '') continue;
+    lines.push(`- ${def.label || def.key}：${String(val).trim().slice(0, 2000)}`);
+  }
+  if (!lines.length) return systemPrompt;
+  const block = `\n\n【用户填写的参数】\n${lines.join('\n')}`;
+  return systemPrompt ? systemPrompt + block : `【用户填写的参数】\n${lines.join('\n')}`;
+}
+
+/* ---------- 工具调用（MCP / 插件 function calling） ----------
+ * 智能体绑定了插件或 MCP 工具时，把工具定义下发给模型；模型返回 tool_calls 时
+ * 逐个执行并把结果以 role:tool 消息回传，循环直到模型给出最终答复或达到轮数上限。
+ */
+const MAX_TOOL_ROUNDS = 5;
+
+/**
+ * 带工具循环的单配置对话调用
+ * @param {object} cfg 完整配置
+ * @param {Array} messages 上游消息（system 注入后的完整消息数组）
+ * @param {object} extra 参数覆盖（含 tools）
+ * @param {Map} registry 工具名 -> 执行器注册表
+ * @returns {Promise<object>} 归一化结果：{ ok, result, toolCalls }（result 即 xfyun 返回体）
+ */
+async function chatWithTools(cfg, messages, extra, registry) {
+  let current = messages;
+  const toolCallsLog = [];
+  let lastResult = null;
+
+  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    const callResult = await xfyun.chatCompletions(cfg, current, extra);
+    if (!callResult.ok) return { ok: false, result: callResult, toolCalls: toolCallsLog };
+
+    // 归一化结果体（与下方主流程一致：显式配置路径 result 即 callResult 本身）
+    const result = callResult.result || callResult;
+    lastResult = callResult;
+    const parsed = xfyun.extractResult(result.data);
+    const toolCalls = parsed.tool_calls || [];
+
+    // 无工具调用：模型已给出最终答复
+    if (!toolCalls.length) return { ok: true, result: callResult, toolCalls: toolCallsLog };
+
+    // 有工具调用：执行并把结果回传
+    const assistantMsg = (result.data.choices && result.data.choices[0] && result.data.choices[0].message) || {};
+    current = current.concat([assistantMsg]);
+
+    for (const tc of toolCalls) {
+      const fn = tc && tc.function;
+      const name = fn && fn.name;
+      const executor = registry.get(name);
+      let output;
+      if (!executor) {
+        output = `错误：未找到工具 ${name}`;
+      } else {
+        try {
+          output = await agentTools.executeTool(executor, fn.arguments);
+        } catch (e) {
+          output = `工具调用失败：${e.message}`;
+        }
+      }
+      toolCallsLog.push({ name, args: fn && fn.arguments, ok: !!executor, output: String(output).slice(0, 2000) });
+      current = current.concat([{ role: 'tool', tool_call_id: tc.id || name, content: String(output) }]);
+    }
+  }
+
+  // 达到轮数上限：返回最后一次结果（可能仍是 tool_calls，交由下游按普通结果处理）
+  return { ok: true, result: lastResult, toolCalls: toolCallsLog };
 }
 
 /**
@@ -114,11 +250,32 @@ router.post('/', asyncHandler(async (req, res) => {
     return res.status(400).json({ ok: false, error: msgErr });
   }
 
-  // 组装请求参数（工作台可覆盖配置默认值）
+  /* ---------- 应用（智能体）配置解析 ----------
+   * 请求带 agentId 时：校验可见性 → 应用其绑定模型/温度/回复上限/关联知识库，
+   * 并把用户填写的参数变量拼进系统提示。所有应用默认值均可被请求显式参数覆盖。
+   */
+  let agent = null;
+  if (body.agentId) {
+    agent = agentService.getForActor(String(body.agentId), actor);
+    if (!agent) return res.status(404).json({ ok: false, error: '应用不存在或不可用（私有应用仅属主与管理员可用）' });
+    if (actor && actor.role === 'viewer') {
+      return res.status(403).json({ ok: false, code: 'FORBIDDEN', error: '只读成员（viewer）不能发起对话，如需使用请联系管理员调整角色' });
+    }
+  }
+  const agentCfg = agent ? {
+    configId: agent.configId || '',
+    temperature: typeof agent.temperature === 'number' ? agent.temperature : undefined,
+    maxTokens: Number.isFinite(agent.maxTokens) ? agent.maxTokens : undefined,
+    kbId: agent.kbId || '',
+    kbMaxRefs: Number.isFinite(agent.kbMaxRefs) ? agent.kbMaxRefs : 5,
+    kbMinScore: Number.isFinite(agent.kbMinScore) ? agent.kbMinScore : 0
+  } : null;
+
+  // 组装请求参数（应用绑定值 → 工作台显式覆盖 → 配置默认值，三层回退）
   const extra = {
-    temperature: body.temperature,
+    temperature: body.temperature !== undefined && body.temperature !== null ? body.temperature : (agentCfg && agentCfg.temperature),
     top_p: body.topP,
-    max_completion_tokens: body.maxTokens,
+    max_completion_tokens: body.maxTokens !== undefined && body.maxTokens !== null ? body.maxTokens : (agentCfg && agentCfg.maxTokens),
     // 前台参数工具栏：深度思考开关 / 思考强度（显式 boolean 与字符串优先，未传回退配置）
     enable_thinking: typeof body.enableThinking === 'boolean' ? body.enableThinking : undefined,
     reasoning_effort: body.reasoningEffort === 'high' || body.reasoningEffort === 'max' ? body.reasoningEffort : undefined,
@@ -128,8 +285,23 @@ router.post('/', asyncHandler(async (req, res) => {
     // 避免后台误开流式后浏览器 UI（不消费 SSE）拿到 event-stream 而无法解析。
     stream: false
   };
-  // 前台「系统提示」输入框：字符串则覆盖配置默认（空串=不注入），undefined 则用配置值
-  const customSystemPrompt = typeof body.systemPrompt === 'string' ? body.systemPrompt : undefined;
+  // 系统提示优先级：前台显式值 → 应用（智能体）角色设定 → 配置默认值；
+  // 应用带参数变量时，把用户填写值拼成补充信息附加其后
+  let baseSystemPrompt;
+  if (typeof body.systemPrompt === 'string') baseSystemPrompt = body.systemPrompt;
+  else if (agent) baseSystemPrompt = agent.systemPrompt || '';
+  else baseSystemPrompt = undefined; // undefined = 回退配置默认
+  if (agent && Array.isArray(agent.variables) && agent.variables.length) {
+    const missing = agent.variables
+      .filter((v) => v.required)
+      .filter((v) => { const val = body.variables ? body.variables[v.key] : undefined; return val === undefined || String(val).trim() === ''; })
+      .map((v) => v.label || v.key);
+    if (missing.length) {
+      return res.status(400).json({ ok: false, error: `请先填写必填参数：${missing.join('、')}` });
+    }
+    baseSystemPrompt = applyAgentVariables(baseSystemPrompt, agent.variables, body.variables);
+  }
+  const customSystemPrompt = baseSystemPrompt;
 
   // 系统提示注入由各配置的 systemPrompt 决定；为统一处理，先取原始消息
   const rawMessages = Array.isArray(body.messages) ? body.messages.slice() : [];
@@ -138,9 +310,28 @@ router.post('/', asyncHandler(async (req, res) => {
   // （上游无法访问本机 localhost；db.json 里仍存 URL，避免历史记录体积膨胀）
   const { messages: upstreamMessages, inlinedCount } = inlineUploadImages(rawMessages);
 
-  // 判定期望的候选配置（供日志/调度使用）
-  const explicitCfg = body.configId ? configService.getFull(body.configId) : null;
+  // 知识库检索注入：请求显式 kbId 优先；应用绑定的知识库兜底（带引用上限/最低相关度）
+  const effectiveKbId = body.kbId || (agentCfg && agentCfg.kbId) || '';
+  const kbResult = injectKnowledge(upstreamMessages, effectiveKbId, actor, agent ? { topK: agentCfg.kbMaxRefs, minScore: agentCfg.kbMinScore } : null);
+  if (kbResult.error) {
+    return res.status(400).json({ ok: false, error: kbResult.error });
+  }
+
+  // 判定期望的候选配置（供日志/调度使用）：请求显式选择优先，应用绑定次之
+  const wantConfigId = body.configId || (agentCfg && agentCfg.configId) || '';
+  const explicitCfg = wantConfigId ? configService.getFull(wantConfigId) : null;
   const wantStream = body.stream === true;
+
+  // 工具能力：智能体绑定了插件/MCP 工具时构建 function calling 定义。
+  // 工具循环仅支持非流式（与调度器/SSE 语义互斥），故 wantStream 时不启用工具。
+  let toolRegistry = new Map();
+  let agentToolCalls = [];
+  if (agent && !wantStream && (Array.isArray(agent.plugins) && agent.plugins.length || Array.isArray(agent.mcpTools) && agent.mcpTools.length)) {
+    const built = await agentTools.buildTools(agent);
+    toolRegistry = built.registry;
+    if (built.tools.length) extra.tools = built.tools;
+  }
+  const hasTools = toolRegistry.size > 0 && Array.isArray(extra.tools) && extra.tools.length > 0;
 
   /* ---------- 流式（SSE）分支：仅显式配置 ---------- */
   if (explicitCfg && wantStream) {
@@ -207,9 +398,18 @@ router.post('/', asyncHandler(async (req, res) => {
   if (explicitCfg) {
     // 显式指定配置：直接使用该配置（不走调度器）
     const messages = withSystemPrompt(upstreamMessages, explicitCfg, customSystemPrompt);
-    callResult = await xfyun.chatCompletions(explicitCfg, messages, extra);
-    callResult.usedConfig = explicitCfg;
-    callResult.attempts = [{ id: explicitCfg.id, name: explicitCfg.name, model: explicitCfg.model, ok: callResult.ok, status: callResult.status }];
+    if (hasTools) {
+      const toolRes = await chatWithTools(explicitCfg, messages, extra, toolRegistry);
+      callResult = toolRes.result;
+      agentToolCalls = toolRes.toolCalls;
+      // chatWithTools 失败时 result 即 xfyun 返回体；成功时同样
+      callResult.usedConfig = explicitCfg;
+      callResult.attempts = [{ id: explicitCfg.id, name: explicitCfg.name, model: explicitCfg.model, ok: callResult.ok, status: callResult.status }];
+    } else {
+      callResult = await xfyun.chatCompletions(explicitCfg, messages, extra);
+      callResult.usedConfig = explicitCfg;
+      callResult.attempts = [{ id: explicitCfg.id, name: explicitCfg.name, model: explicitCfg.model, ok: callResult.ok, status: callResult.status }];
+    }
   } else {
     // 未指定：走调度器自动切换（当前配置 token 耗尽等失败时自动换下一个）
     // 注意：调度路径恒为非流式（failover 与 SSE 语义互斥），wantStream 在此被忽略
@@ -223,6 +423,17 @@ router.post('/', asyncHandler(async (req, res) => {
       usedCfg = first
         ? { id: first._id, name: first.name, model: first.model }
         : { id: '', name: '', model: '' };
+    }
+    // 调度路径若绑定工具且首次成功返回 tool_calls，继续工具循环（复用首个成功配置）
+    if (hasTools && callResult.ok && usedCfg && usedCfg.apiKey) {
+      const parsed = xfyun.extractResult((callResult.result || callResult).data);
+      if ((parsed.tool_calls || []).length) {
+        const toolRes = await chatWithTools(usedCfg, schedMessages, extra, toolRegistry);
+        callResult = toolRes.result;
+        agentToolCalls = toolRes.toolCalls;
+        callResult.usedConfig = usedCfg;
+        callResult.attempts = [{ id: usedCfg.id, name: usedCfg.name, model: usedCfg.model, ok: callResult.ok, status: callResult.status }];
+      }
     }
   }
 
@@ -246,12 +457,15 @@ router.post('/', asyncHandler(async (req, res) => {
   const effectiveThinking = extra.enable_thinking !== undefined ? extra.enable_thinking : !!(cfg && cfg.enableThinking);
   const effectiveEffort = extra.reasoning_effort || (cfg && cfg.reasoningEffort) || null;
 
-  // 记录日志
+  // 记录日志（agentId 归属：应用维度的对话日志，供后台按应用筛选）
   const entry = {
     id: logService.buildId(),
     time: new Date().toISOString(),
     actorId: actor ? actor.id : null,
     actorName: actor ? actor.displayName : '',
+    agentId: agent ? agent.id : null,
+    agentName: agent ? agent.name : '',
+    channel: agent ? 'app' : 'workbench',
     configId: cfg ? cfg.id : null,
     configName: cfg ? cfg.name : '',
     model: cfg ? cfg.model : '',
@@ -268,7 +482,11 @@ router.post('/', asyncHandler(async (req, res) => {
       webSearch: effectiveWebSearch,
       enableThinking: effectiveThinking,
       reasoningEffort: effectiveEffort,
-      imagesInlined: inlinedCount
+      imagesInlined: inlinedCount,
+      // 知识库注入信息（未启用为 null）
+      knowledgeBase: kbResult.injected ? { name: kbResult.kbName, chunks: kbResult.chunks } : null,
+      // 工具调用记录（MCP / 插件 function calling，未启用为空数组）
+      toolCalls: agentToolCalls
     }
   };
   if (callResult.attempts && callResult.attempts.length > 1) {

@@ -11,6 +11,17 @@ adminAuth.bootstrap(); // 初始化管理密码哈希（首次启动随机生成
 userService.bootstrapMigrate(); // 旧密码迁移为 owner 员工账号 / 历史数据打标 / v1 兼容窗口
 require('./src/configService').checkEncryptionState(); // API Key 加密自检（设置了 DB_ENCRYPT_KEY 才相关）
 
+// 预置演示数据：全新数据库（仅 owner 账号、无智能体 / 无知识库）自动导入，开箱即可测试功能完整性
+// 已导入过一次（settings.presetsSeeded）或已有数据的库不会重复导入；后台「智能体」「知识库」页也有一键导入按钮
+try {
+  const d = require('./src/db').load();
+  if (!(d.settings && d.settings.presetsSeeded) && d.users.length <= 1 && !d.agents.length && !d.kbs.length) {
+    const a = require('./src/agentService').seedPresets(null);
+    const k = require('./src/kbService').seedPresets(null);
+    console.log(`[初始化] 已导入预置数据：智能体 ${a.added} 个、知识库 ${k.added} 个（${k.chunks} 段）——应用中心 / 知识库 / 检索测试开箱可用`);
+  }
+} catch (_) { /* 预置导入失败不阻断启动 */ }
+
 const app = express();
 const PORT = process.env.PORT || 4000;
 
@@ -47,6 +58,9 @@ app.use((req, res, next) => {
 // —— 工作台游客密码保护（/api/workbench）：登录/退出/状态永远免登录 ——
 app.use('/api/workbench', require('./src/routes/workbench'));
 
+// —— 应用对外分享（/api/app-share）：token 即凭证，公开读写（QPM/密码在路由内自校验） ——
+app.use('/api/app-share', require('./src/routes/app-share'));
+
 // —— 员工认证（/api/auth）：登录/退出/登录页状态/开放注册永远免登录，其余需员工会话 ——
 app.use('/api/auth', (req, res, next) => {
   if (req.path === '/login' || req.path === '/logout' || req.path === '/setup-status' || req.path === '/register') return next();
@@ -61,7 +75,7 @@ app.use('/api/auth', (req, res, next) => {
 app.use((req, res, next) => {
   if (!adminAuth.isWorkbenchAuthEnabled()) return next();
   const p = req.path || '';
-  if (p === '/api/health' || p.startsWith('/api/admin') || p.startsWith('/api/workbench') || p.startsWith('/api/auth')) return next();
+  if (p === '/api/health' || p.startsWith('/api/admin') || p.startsWith('/api/workbench') || p.startsWith('/api/auth') || p.startsWith('/api/app-share')) return next();
   if (/^\/api\/share\/[A-Za-z0-9_-]{8,64}$/.test(p)) return next(); // 分享快照公开读（创建/撤销仍受守卫）
   if (p.startsWith('/api/')) return adminAuth.requireWorkbenchApi(req, res, next);
   if (p.startsWith('/uploads/')) return adminAuth.requireWorkbenchApi(req, res, next);
@@ -79,6 +93,34 @@ app.use('/api/admin', require('./src/routes/admin'));
 // 注意：须置于 /api/admin 挂载之后——请求先过 requireTeamUser，再落到此处按角色收紧
 app.use('/api/admin/users', adminAuth.requireRole('owner', 'admin'), require('./src/routes/admin-users'));
 app.use('/api/admin/audit-logs', adminAuth.requireRole('owner', 'admin'), require('./src/routes/audit'));
+// —— 知识库管理（/api/admin/kb）：仅 owner/admin；系统信息（/api/admin/system-info）：仅 owner/admin ——
+app.use('/api/admin/kb', adminAuth.requireRole('owner', 'admin'), require('./src/routes/kb'));
+app.use('/api/admin/system-info', adminAuth.requireRole('owner', 'admin'), require('./src/routes/system'));
+// —— 文件存储管理（/api/admin/storage）：仅 owner/admin ——
+app.use('/api/admin/storage', adminAuth.requireRole('owner', 'admin'), require('./src/routes/storage'));
+// —— 智能体（/api/agents：登录员工只读列表；/api/admin/agents：owner/admin 管理）——
+app.use('/api/agents', adminAuth.requireTeamUser, require('./src/routes/agents'));
+app.use('/api/admin/agents', adminAuth.requireRole('owner', 'admin'), require('./src/routes/agents-admin'));
+// —— 知识库只读元信息（/api/kb）：登录员工可用（工作台对话关联知识库用；访客不可见）——
+app.use('/api/kb', adminAuth.requireTeamUser, require('./src/routes/kb-list'));
+// —— 语音合成（TTS）：/api/admin/tts 仅 owner/admin 配置；/api/tts 登录员工合成/读配置 ——
+const ttsRoutes = require('./src/routes/tts');
+app.use('/api/admin/tts', adminAuth.requireRole('owner', 'admin'), ttsRoutes.adminRouter);
+app.use('/api/tts', adminAuth.requireTeamUser, ttsRoutes.router);
+// —— 通知公告（/api/notice）：公开只读，工作台/员工中心顶部展示 ——
+app.use('/api/notice', require('./src/routes/notice'));
+// —— 画布工作流（/api/admin/workflows）：仅 owner/admin ——
+app.use('/api/admin/workflows', adminAuth.requireRole('owner', 'admin'), require('./src/routes/workflows'));
+// —— 工作流成员运行（/api/workflows）：登录员工可选流执行（viewer 禁止）——
+app.use('/api/workflows', adminAuth.requireTeamUser, require('./src/routes/workflows-run'));
+// —— MCP 服务（/api/admin/mcp：owner/admin 配置；/api/mcp：登录员工只读/发现工具）——
+const mcpRoutes = require('./src/routes/mcp');
+app.use('/api/admin/mcp', adminAuth.requireRole('owner', 'admin'), mcpRoutes.adminRouter);
+app.use('/api/mcp', adminAuth.requireTeamUser, mcpRoutes.router);
+// —— 插件市场（/api/admin/plugins：owner/admin 安装/卸载；/api/plugins：登录员工只读）——
+const pluginRoutes = require('./src/routes/plugins');
+app.use('/api/admin/plugins', adminAuth.requireRole('owner', 'admin'), pluginRoutes.adminRouter);
+app.use('/api/plugins', adminAuth.requireTeamUser, pluginRoutes.router);
 
 // 软身份解析：携带有效员工会话 → 注入 req.user（供数据归属/日志留痕/角色过滤）；
 // 无员工会话 → 放过（访客流量，由工作台密码总闸负责准入）。
@@ -145,6 +187,9 @@ app.get('/admin.html', adminAuth.requireTeamPage, adminPageGuard, (req, res) => 
 // 员工中心（/me）：任何登录员工可进入（基本信息 / 我的数据 / 登录记录 / 改密）
 app.get('/me', adminAuth.requireTeamPage, (req, res) => res.sendFile(path.join(__dirname, 'public', 'me.html')));
 
+// 帮助中心（/help）：公开页面（快速上手 / 常见问题）
+app.get('/help', (req, res) => res.sendFile(path.join(__dirname, 'public', 'help.html')));
+
 // 系统首页（/）：门户介绍页 + 员工登录/注册入口（公开，无需守卫）
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'home.html')));
 // 旧路径 /home 永久跳转首页，兼容既有书签/外链
@@ -160,6 +205,11 @@ app.get('/login', (req, res) => {
 // 必须早于下方静态托管注册，且路径带 token 参数（非法 token 由前端调公开接口后展示错误态）。
 app.get(/^\/s\/([A-Za-z0-9_-]{8,64})$/, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'share.html'));
+});
+
+// 应用对外分享页（/a/:token）：访客与应用对话的公开页面（QPM/密码由接口层校验）。
+app.get(/^\/a\/([A-Za-z0-9_-]{8,64})$/, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'app-share.html'));
 });
 
 // 工作台（/app，带访客密码守卫）。必须早于下方静态托管——
@@ -179,9 +229,20 @@ app.use((err, req, res, next) => {
   res.status(500).json({ ok: false, error: '服务器内部错误' });
 });
 
-app.listen(PORT, () => {
+// 端口占用单独提示：listen 错误若交给上方 uncaughtException 兜底，进程会"假活"不退出，
+// 双击 启动.bat 的用户只会看到窗口卡住，不知道是端口冲突。
+const server = app.listen(PORT, () => {
   console.log(`xfyun-workbench 已启动: http://127.0.0.1:${PORT}`);
   console.log(`  工作台:    http://127.0.0.1:${PORT}/`);
   console.log(`  员工登录:  http://127.0.0.1:${PORT}/team-login`);
   console.log(`  后台管理:  http://127.0.0.1:${PORT}/admin （需员工账号登录，初始账号见上方启动日志）`);
+});
+server.on('error', (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    console.error(`[启动失败] 端口 ${PORT} 已被占用：可能已有本工作台实例在运行，先打开 http://127.0.0.1:${PORT}/ 确认。`);
+    console.error(`  若确认要换端口启动：先执行 set PORT=4001 再运行 node server.js。`);
+  } else {
+    console.error('[启动失败] 监听端口出错:', err);
+  }
+  process.exit(1);
 });

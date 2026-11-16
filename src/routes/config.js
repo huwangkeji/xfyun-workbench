@@ -2,11 +2,24 @@
 
 const express = require('express');
 const configService = require('../configService');
+const adminAuth = require('../adminAuth');
 const xfyun = require('../xfyun');
 const logService = require('../logService');
 const auditService = require('../auditService');
 const asyncHandler = require('../asyncHandler');
 const router = express.Router();
+
+// 编辑用完整配置（含解密后的 API Key 明文）：仅 owner/admin 可读
+// 注意：GET 方法不经过挂载点的 requireAdminWrite，这里自行做「登录 + 角色」双重校验
+router.get('/:id/full', adminAuth.requireTeamUser, (req, res) => {
+  if (!req.user || !['owner', 'admin'].includes(req.user.role)) {
+    return res.status(403).json({ ok: false, error: '仅管理员可查看完整 API Key' });
+  }
+  const cfg = configService.getFull(req.params.id);
+  if (!cfg) return res.status(404).json({ ok: false, error: '配置不存在' });
+  // 与列表/详情一致补 _id，前端编辑弹窗直接使用
+  res.json({ ok: true, data: { ...cfg, _id: cfg.id } });
+});
 
 // 配置 Token 可用性测试：对指定配置发最小对话请求
 // 验证 API Key / model 是否可用，返回耗时与 token 用量，并记录一条日志

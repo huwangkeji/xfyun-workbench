@@ -80,6 +80,42 @@ router.get('/my-overview', (req, res) => {
   res.json({ ok: true, data: logService.overview(req.user, { days: 7 }) });
 });
 
+// 我的使用记录（个人中心「使用记录」卡：本人最近 30 条模型请求，绝不看别人的）
+router.get('/my-usage', (req, res) => {
+  const logService = require('../logService');
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 30));
+  const db = require('../db').load();
+  const items = (db.logs || [])
+    .filter((l) => l.actorId === req.user.id)
+    .sort((a, b) => (Date.parse(b.time) || 0) - (Date.parse(a.time) || 0))
+    .slice(0, limit)
+    .map((l) => ({
+      time: l.time,
+      model: l.model || l.configName || '-',
+      status: l.status,
+      latencyMs: Number(l.latencyMs) || 0,
+      totalTokens: Number(l.totalTokens) || 0
+    }));
+  res.json({ ok: true, data: { items } });
+});
+
+// 自助头像：{ dataUrl }（data:image/*;base64,...）；传空串清除头像
+router.post('/avatar', asyncHandler(async (req, res) => {
+  const body = req.body || {};
+  const r = userService.setAvatar(req.user.id, typeof body.dataUrl === 'string' ? body.dataUrl : undefined);
+  if (!r.ok) return res.status(400).json({ ok: false, error: r.error });
+  auditService.log(req.user, auditService.ACTIONS.ACCOUNT_UPDATE, `auth:${req.user.username}`, `更新头像`, auditService.ipOf(req));
+  res.json({ ok: true, data: r.data });
+}));
+
+// 自助壁纸：{ wallpaper?, dataUrl?, blur?, clear? }；设置聊天区壁纸（上传/URL）+ 毛玻璃开关
+router.post('/wallpaper', asyncHandler(async (req, res) => {
+  const body = req.body || {};
+  const r = userService.setWallpaper(req.user.id, body);
+  if (!r.ok) return res.status(400).json({ ok: false, error: r.error });
+  res.json({ ok: true, data: r.data });
+}));
+
 // 开放自助注册（P3，默认关闭；注册角色固定为 member，注册后自动登录）
 router.post('/register', asyncHandler(async (req, res) => {
   const configService = require('../configService');

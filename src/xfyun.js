@@ -44,6 +44,24 @@ function sleep(ms) {
 }
 
 /**
+ * 按配置的接口风格拼接 chat/completions 完整 URL。
+ *   - xfyun（默认）：{base}/v2/chat/completions —— 讯飞 MaaS 官方端点
+ *   - openai：OpenAI 兼容端点，兼容 OpenAI / DeepSeek / Kimi / 通义 / 智谱 v4 等：
+ *       baseUrl 以 /chat/completions 结尾 → 原样使用（用户填了完整路径）
+ *       baseUrl 以 /v数字 结尾（如 /v1、/v4）   → 拼 /chat/completions
+ *       其余                                   → 拼 /v1/chat/completions
+ */
+function chatUrl(cfg) {
+  const base = (cfg.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, '');
+  if (cfg.apiStyle === 'openai') {
+    if (/\/chat\/completions$/.test(base)) return base;
+    if (/\/v\d+$/.test(base)) return `${base}/chat/completions`;
+    return `${base}/v1/chat/completions`;
+  }
+  return `${base}/v2/chat/completions`;
+}
+
+/**
  * 带重试的 fetch：网络异常与 5xx 按指数退避重试，4xx 原样返回交由上层构造错误信息。
  * @returns {Promise<Response>} 首个非 5xx 的响应
  */
@@ -100,7 +118,19 @@ function buildChatBody(cfg, messages, extra = {}) {
     messages
   };
 
+  // OpenAI 兼容风格：max_completion_tokens 是讯飞私有命名（OpenAI 标准为 max_tokens，
+  // DeepSeek / Kimi / 通义等均用 max_tokens），映射后再下发
+  const isOpenAI = cfg.apiStyle === 'openai';
   for (const { body: bodyKey, cfg: cfgKey } of PARAM_MAP) {
+    if (isOpenAI && bodyKey === 'max_completion_tokens') {
+      const fromExtra = extra.max_completion_tokens !== undefined;
+      const val = fromExtra ? extra.max_completion_tokens : cfg[cfgKey];
+      if (val !== null && val !== undefined && val !== '') body.max_tokens = val;
+      continue;
+    }
+    // 讯飞私有参数不发给 OpenAI 兼容上游（enable_thinking / reasoning_effort 取值域也不同，
+    // 盲发可能被严格校验的上游直接 400 拒绝）
+    if (isOpenAI && (bodyKey === 'enable_thinking' || bodyKey === 'reasoning_effort')) continue;
     const fromExtra = extra[bodyKey] !== undefined;
     const val = fromExtra ? extra[bodyKey] : cfg[cfgKey];
     if (val === null || val === undefined || val === '') continue;
@@ -111,10 +141,18 @@ function buildChatBody(cfg, messages, extra = {}) {
 
   // 内置网络搜索工具（文档 §tools.type=web_search，tools[].web_search.enable）
   // extra.webSearch 显式传入时覆盖配置默认值（前台「联网搜索」开关按次请求控制）
+  // 注意：web_search 是讯飞私有工具定义，OpenAI 兼容上游不识别，仅 xfyun 风格下发
   const webSearch = extra.webSearch !== undefined ? extra.webSearch : cfg.webSearch;
-  if (webSearch) {
-    body.tools = [{ type: 'web_search', web_search: { enable: true } }];
+
+  // 自定义 function calling 工具（MCP / 插件）。extra.tools 为 OpenAI 风格的
+  // [{type:'function', function:{name,description,parameters}}] 数组，原样下发。
+  const customTools = Array.isArray(extra.tools) ? extra.tools : [];
+  const toolList = [];
+  if (webSearch && !isOpenAI) {
+    toolList.push({ type: 'web_search', web_search: { enable: true } });
   }
+  for (const t of customTools) toolList.push(t);
+  if (toolList.length) body.tools = toolList;
 
   return body;
 }
@@ -127,8 +165,7 @@ function buildChatBody(cfg, messages, extra = {}) {
  * @returns {{ok:boolean, status:number, data:object|null, error:string|null, isAuth?:boolean, latencyMs:number}}
  */
 async function chatCompletions(cfg, messages, extra = {}) {
-  const base = cfg.baseUrl || DEFAULT_BASE_URL;
-  const url = `${base}/v2/chat/completions`;
+  const url = chatUrl(cfg);
   const body = buildChatBody(cfg, messages, extra);
 
   const startedAt = Date.now();
@@ -157,8 +194,7 @@ async function chatCompletions(cfg, messages, extra = {}) {
  * @returns {{ok:boolean, status:number, data:Response|null, error:string|null, latencyMs:number}}
  */
 async function chatCompletionsStream(cfg, messages, extra = {}) {
-  const base = cfg.baseUrl || DEFAULT_BASE_URL;
-  const url = `${base}/v2/chat/completions`;
+  const url = chatUrl(cfg);
   const body = buildChatBody(cfg, messages, { ...extra, stream: true });
 
   const startedAt = Date.now();
@@ -204,7 +240,7 @@ async function readError(resp) {
   const detail = data && (data.message || data.error) ? JSON.stringify(data.message || data.error) : text;
   const isAuth = resp.status === 401 || resp.status === 403;
   if (isAuth) {
-    return `API Key 无效或未授权（HTTP ${resp.status}）：请在讯飞 MaaS 控制台「API 调用 / APIKEY 管理」确认该 API Key，并检查「后台管理→API 配置」里对应配置的 Key 是否正确后重新保存。${detail ? `（${detail}）` : ''}`;
+    return `API Key 无效或未授权（HTTP ${resp.status}）：请确认该 API Key 有效且未过期，并检查「后台管理→API 配置」里对应配置的 Key 与接口风格是否正确后重新保存。${detail ? `（${detail}）` : ''}`;
   }
   if (resp.status === 429) {
     // 官方未公布具体限流阈值，超限时按 429 处理并提示降频
@@ -383,4 +419,4 @@ function extractResult(data) {
   };
 }
 
-module.exports = { chatCompletions, chatCompletionsStream, tti, extractResult, buildChatBody, PARAM_MAP, DEFAULT_BASE_URL };
+module.exports = { chatCompletions, chatCompletionsStream, tti, extractResult, buildChatBody, chatUrl, PARAM_MAP, DEFAULT_BASE_URL };

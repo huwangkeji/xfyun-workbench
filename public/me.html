@@ -3,65 +3,188 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>员工中心 · 同聪星火</title>
+  <title data-brand="siteTitle" data-template="员工中心 · {site}">员工中心 · 同聪星火</title>
+  <script>
+    /* 主题初始化：v2 起默认浅色；旧默认深色一次性迁移（与 home.html 同逻辑） */
+    try {
+      var _t = localStorage.getItem('wb_theme');
+      if (!localStorage.getItem('wb_theme_v2')) {
+        if (!_t || _t === 'dark') { _t = 'light'; localStorage.setItem('wb_theme', 'light'); }
+        localStorage.setItem('wb_theme_v2', '1');
+      }
+      document.documentElement.dataset.theme = _t || 'light';
+    } catch (_) { document.documentElement.dataset.theme = 'light'; }
+  </script>
   <link rel="stylesheet" href="/assets/style.css" />
 </head>
-<body class="has-more">
-  <header class="topbar">
-    <div class="brand">
-      <span>员工中心</span>
-    </div>
-    <div class="top-actions">
-      <a class="btn" href="/app">返回工作台</a>
-      <a class="btn" href="/admin" id="adminEntry" style="display:none">后台管理</a>
-      <button class="btn" id="logoutBtn">退出登录</button>
-    </div>
-    <button class="btn btn-sm top-more-btn" id="topMoreBtn" type="button" title="更多操作" aria-expanded="false">⋯</button>
-  </header>
-
-  <main class="admin">
-    <!-- 基本信息 -->
-    <div class="card">
-      <div class="card-title">基本信息</div>
-      <div class="me-profile" id="meProfile">
-        <div class="empty">加载中…</div>
+<body class="admin-shell has-more">
+  <!-- 左侧 F 型导航 -->
+  <aside class="side-nav" id="sideNav">
+    <div class="side-brand">
+      <div class="brand-logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+          <path d="M12 8l1.1 2.4L15.5 11.5l-2.4 1.1L12 15l-1.1-2.4L8.5 11.5l2.4-1.1z" fill="#fff" stroke="none"/>
+        </svg>
+      </div>
+      <div>
+        <b>同聪星火</b>
+        <span>员工中心</span>
       </div>
     </div>
 
-    <!-- 我的数据（近 7 天） -->
-    <div class="card" style="margin-top:16px">
-      <div class="card-title">我的数据 · 近 7 天</div>
-      <div class="ov-cards" id="myOverview">
-        <div class="empty">加载中…</div>
+    <nav>
+      <div class="nav-group">个人中心</div>
+      <button class="nav-item active" data-metab="profile"><span class="nav-ico">👤</span>基本信息</button>
+      <button class="nav-item" data-metab="overview"><span class="nav-ico">📊</span>我的数据</button>
+      <button class="nav-item" data-metab="usage"><span class="nav-ico">📋</span>使用记录</button>
+      <button class="nav-item" data-metab="logins"><span class="nav-ico">🔐</span>登录记录</button>
+      <button class="nav-item" data-metab="security"><span class="nav-ico">🛡️</span>账号安全</button>
+      <button class="nav-item" data-metab="theme"><span class="nav-ico">🎨</span>个性化设置</button>
+      <div class="nav-group">快捷入口</div>
+      <a href="/app"><span class="nav-item" style="display:flex"><span class="nav-ico">💬</span>进入工作台</span></a>
+      <a href="/admin" id="adminEntry" style="display:none"><span class="nav-item" style="display:flex"><span class="nav-ico">⚙️</span>后台管理</span></a>
+      <a href="/help"><span class="nav-item" style="display:flex"><span class="nav-ico">❓</span>帮助中心</span></a>
+      <a href="/"><span class="nav-item" style="display:flex"><span class="nav-ico">🏠</span>门户首页</span></a>
+      <div class="side-foot" style="border-top:1px solid var(--border);padding-top:10px">
+        <button class="btn theme-btn" data-theme-toggle type="button">☀️ 切换日间模式</button>
       </div>
-      <div class="hint" style="margin-top:8px">仅统计你本人的对话记录；全部成员的汇总请让管理员在后台「数据概览」查看。</div>
-    </div>
+    </nav>
+  </aside>
+  <div class="sidebar-backdrop" id="sideBackdrop" style="display:none"></div>
 
-    <!-- 我的登录记录 -->
-    <div class="card" style="margin-top:16px">
-      <div class="card-title">我的登录记录</div>
-      <div class="hint">最近 30 条登录 / 退出 / 改密记录。如发现异常登录，请立即修改密码并通知管理员。</div>
-      <div class="table-wrap" style="margin-top:10px">
-        <table>
-          <thead>
-            <tr><th>时间</th><th>事件</th><th>IP</th></tr>
-          </thead>
-          <tbody id="myLoginRows">
-            <tr><td colspan="3" class="empty">加载中…</td></tr>
-          </tbody>
-        </table>
+  <!-- 右侧主区 -->
+  <div class="admin-main">
+    <header class="page-head">
+      <button class="btn btn-sm side-toggle" id="sideToggle" type="button" title="菜单">☰</button>
+      <h1 class="page-title">员工中心</h1>
+      <span class="spacer"></span>
+      <div class="top-actions">
+        <a class="btn" href="/app">返回工作台</a>
+        <button class="btn" id="logoutBtn">退出登录</button>
       </div>
-    </div>
+      <button class="btn btn-sm top-more-btn" id="topMoreBtn" type="button" title="更多操作" aria-expanded="false">⋯</button>
+    </header>
 
-    <!-- 账号安全 -->
-    <div class="card" style="margin-top:16px">
-      <div class="card-title">账号安全</div>
-      <div class="toolbar">
-        <button class="btn primary" id="changePwdBtn">修改密码</button>
-        <span class="hint">密码至少 8 位，须同时包含字母和数字；修改后当前设备需重新登录，其他设备不受影响。</span>
+    <main class="admin-content">
+      <!-- 基本信息（含头像） -->
+      <div class="tab-pane active" id="mePane-profile">
+        <div class="card">
+          <div class="card-title">基本信息</div>
+          <div class="me-avatar-bar">
+            <div class="me-avatar" id="meAvatar" title="点击上传头像">👤</div>
+            <div>
+              <div class="hint" style="margin-bottom:6px">支持 PNG / JPG / GIF / WebP，≤2MB；点击左侧头像即可更换。</div>
+              <div class="toolbar" style="flex-wrap:wrap">
+                <button class="btn" id="avatarUpBtn">上传头像</button>
+                <button class="btn" id="avatarClearBtn" style="display:none">恢复默认</button>
+                <input type="file" id="avatarInput" accept=".png,.jpg,.jpeg,.gif,.webp" hidden />
+              </div>
+            </div>
+          </div>
+          <div class="me-profile" id="meProfile">
+            <div class="empty">加载中…</div>
+          </div>
+        </div>
       </div>
-    </div>
-  </main>
+
+      <!-- 我的数据（近 7 天） -->
+      <div class="tab-pane" id="mePane-overview">
+        <div class="card">
+          <div class="card-title">我的数据 · 近 7 天</div>
+          <div class="ov-cards" id="myOverview">
+            <div class="empty">加载中…</div>
+          </div>
+          <div class="hint" style="margin-top:8px">仅统计你本人的对话记录；全部成员的汇总请让管理员在后台「数据概览」查看。</div>
+        </div>
+      </div>
+
+      <!-- 我的使用记录 -->
+      <div class="tab-pane" id="mePane-usage">
+        <div class="card">
+          <div class="card-title">我的使用记录</div>
+          <div class="hint">你本人最近的模型调用明细（时间 / 模型 / 状态 / 耗时 / Token），仅自己可见。</div>
+          <div class="table-wrap" style="margin-top:10px">
+            <table>
+              <thead>
+                <tr><th>时间</th><th>模型</th><th>状态</th><th>耗时</th><th>Token</th></tr>
+              </thead>
+              <tbody id="myUsageRows">
+                <tr><td colspan="5" class="empty">加载中…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- 我的登录记录 -->
+      <div class="tab-pane" id="mePane-logins">
+        <div class="card">
+          <div class="card-title">我的登录记录</div>
+          <div class="hint">最近 30 条登录 / 退出 / 改密记录。如发现异常登录，请立即修改密码并通知管理员。</div>
+          <div class="table-wrap" style="margin-top:10px">
+            <table>
+              <thead>
+                <tr><th>时间</th><th>事件</th><th>IP</th></tr>
+              </thead>
+              <tbody id="myLoginRows">
+                <tr><td colspan="3" class="empty">加载中…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- 账号安全 -->
+      <div class="tab-pane" id="mePane-security">
+        <div class="card">
+          <div class="card-title">账号安全</div>
+          <div class="toolbar">
+            <button class="btn primary" id="changePwdBtn">修改密码</button>
+            <span class="hint">密码至少 8 位，须同时包含字母和数字；修改后当前设备需重新登录，其他设备不受影响。</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 个性化设置（壁纸 + 毛玻璃） -->
+      <div class="tab-pane" id="mePane-theme">
+        <div class="card">
+          <div class="card-title">聊天区壁纸</div>
+          <div class="hint" style="margin-bottom:12px">设置聊天窗口的背景壁纸：可上传本地图片，或填写在线图片 URL；开启毛玻璃后背景会叠加高斯模糊，让对话更柔和。</div>
+
+          <!-- 壁纸预览 -->
+          <div class="wallpaper-preview" id="wallpaperPreview">
+            <div class="wallpaper-preview-inner" id="wallpaperPreviewInner">未设置壁纸</div>
+          </div>
+
+          <div class="field-sep" style="margin:16px 0 10px">上传壁纸</div>
+          <div class="toolbar" style="flex-wrap:wrap">
+            <button class="btn" id="wallpaperUploadBtn">🖼️ 上传壁纸</button>
+            <button class="btn" id="wallpaperClearBtn" style="display:none">清除壁纸</button>
+            <input type="file" id="wallpaperInput" accept=".png,.jpg,.jpeg,.gif,.webp" hidden />
+            <span class="hint">支持 PNG / JPG / GIF / WebP，≤8MB</span>
+          </div>
+
+          <div class="field-sep" style="margin:16px 0 10px">URL 壁纸</div>
+          <div class="toolbar" style="flex-wrap:wrap">
+            <input class="input" id="wallpaperUrl" placeholder="https://example.com/bg.jpg" style="max-width:380px" />
+            <button class="btn primary" id="wallpaperUrlApplyBtn">应用</button>
+          </div>
+
+          <div class="field-sep" style="margin:16px 0 10px">毛玻璃效果</div>
+          <label class="kb-mode-opt" style="display:inline-flex">
+            <input type="checkbox" id="wallpaperBlur" /> 毛玻璃（背景模糊柔化）
+          </label>
+
+          <div class="toolbar" style="margin-top:16px">
+            <button class="btn primary" id="wallpaperSaveBtn">保存设置</button>
+            <span class="hint" id="wallpaperHint"></span>
+          </div>
+        </div>
+      </div>
+    </main>
+    <footer class="app-footer" data-brand="footerText">© 2026 沧州氢境科技有限公司 · 星火工作台</footer>
+  </div>
 
   <!-- 修改密码 -->
   <div class="modal-mask" id="pwdModal" style="display:none">
@@ -85,7 +208,26 @@
 
   <div class="toast-wrap" id="toastWrap"></div>
 
+  <script src="/assets/branding.js"></script>
+  <script src="/assets/theme.js"></script>
   <script src="/assets/topbar-more.js"></script>
   <script src="/assets/me.js"></script>
+  <script>
+    // 移动端抽屉开关（与后台同款交互）
+    (function () {
+      var toggle = document.getElementById('sideToggle');
+      var backdrop = document.getElementById('sideBackdrop');
+      if (!toggle) return;
+      toggle.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var open = document.body.classList.toggle('side-open');
+        if (backdrop) backdrop.style.display = open ? 'block' : 'none';
+      });
+      if (backdrop) backdrop.addEventListener('click', function () {
+        document.body.classList.remove('side-open');
+        backdrop.style.display = 'none';
+      });
+    })();
+  </script>
 </body>
 </html>

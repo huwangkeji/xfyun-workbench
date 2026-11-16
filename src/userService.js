@@ -15,8 +15,15 @@
  */
 
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const db = require('./db');
 const adminAuth = require('./adminAuth');
+
+const AVATAR_MAX_BYTES = 2 * 1024 * 1024; // 2MB
+const AVATAR_MIN_DIM = 50;
+const AVATAR_MAX_DIM = 4000;
+const AVATAR_DIR = process.env.XFYUN_AVATAR_DIR || path.join(__dirname, '..', 'public', 'uploads', 'avatars');
 
 const ROLES = ['owner', 'admin', 'member', 'viewer'];
 const ROLE_LABELS = { owner: '超级管理员', admin: '管理员', member: '成员', viewer: '只读成员' };
@@ -38,12 +45,17 @@ function sanitize(user) {
     username: user.username,
     displayName: user.displayName,
     role: user.role,
+    department: user.department || '',
     status: user.status,
+    avatarUrl: user.avatarUrl || '',
     mustChangePassword: !!user.mustChangePassword,
     lastLoginAt: user.lastLoginAt || null,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
-    note: user.note || ''
+    note: user.note || '',
+    // 个性化：聊天区壁纸（图片 URL 或 /uploads/... ）+ 毛玻璃开关
+    wallpaper: user.wallpaper || '',
+    wallpaperBlur: !!user.wallpaperBlur
   };
 }
 
@@ -100,6 +112,7 @@ function create(input, actor = null) {
   const role = (input && input.role) || 'member';
   const password = input && input.password;
   const note = typeof (input && input.note) === 'string' ? input.note.slice(0, 500) : '';
+  const department = typeof (input && input.department) === 'string' ? input.department.trim().slice(0, 30) : '';
 
   const errors = [];
   const uErr = validateUsername(username);
@@ -128,7 +141,8 @@ function create(input, actor = null) {
     lastLoginAt: null,
     createdAt: now,
     updatedAt: now,
-    note
+    note,
+    department
   };
   db.load().users.push(user);
   db.save();
@@ -184,6 +198,11 @@ function update(id, patch = {}, actor = null) {
     next.note = typeof patch.note === 'string' ? patch.note.slice(0, 500) : '';
   }
 
+  // 部门（组织架构轻量字段，最长 30 字符）
+  if (patch.department !== undefined) {
+    next.department = typeof patch.department === 'string' ? patch.department.trim().slice(0, 30) : '';
+  }
+
   // 管理员重置密码：随机临时密码 + 首次登录强制改密
   if (patch.resetPassword) {
     const temp = crypto.randomBytes(9).toString('base64url'); // ~12 位随机密码
@@ -223,7 +242,110 @@ function setStatus(id, status, actor = null) {
   return update(id, { status }, actor);
 }
 
-/* ================= 登录 / 改密 ================= */
+/* ================= 登录 / 改密 / 头像 ================= */
+
+/**
+ * 自助头像：校验图片（魔数 + 尺寸）→ 落盘 uploads/avatars → 更新 avatarUrl。
+ * 旧头像文件不再引用后即成孤儿文件，由运维随 uploads 目录一并清理，不做即时删除（避免误删并发引用）。
+ * @returns {{ok:true, data:{avatarUrl}}|{ok:false, error:string}}
+ */
+function setAvatar(userId, dataUrl) {
+  const imageUtil = require('./imageUtil');
+  const data = db.load();
+  const user = data.users.find((u) => u.id === userId);
+  if (!user) return { ok: false, error: '账号不存在' };
+  if (user.status !== 'active') return { ok: false, error: '账号已停用' };
+
+  if (dataUrl === '') {
+    // 传空串 = 清除头像（恢复默认首字母标识）
+    user.avatarUrl = '';
+    user.updatedAt = new Date().toISOString();
+    db.save();
+    return { ok: true, data: { avatarUrl: '' } };
+  }
+
+  const parsed = imageUtil.parseImageDataUrl(dataUrl);
+  if (parsed.error) return { ok: false, error: parsed.error };
+  const { mime, format, buffer } = parsed;
+  if (!buffer || buffer.length === 0) return { ok: false, error: '头像内容为空' };
+  if (buffer.length > AVATAR_MAX_BYTES) {
+    return { ok: false, error: `头像 ${(buffer.length / 1024 / 1024).toFixed(1)}MB 超过 2MB 上限` };
+  }
+  const size = imageUtil.imageSize(buffer, format);
+  if (!size || !size.width || !size.height) return { ok: false, error: '无法解析图片尺寸（文件可能损坏）' };
+  if (size.width < AVATAR_MIN_DIM || size.height < AVATAR_MIN_DIM || size.width > AVATAR_MAX_DIM || size.height > AVATAR_MAX_DIM) {
+    return { ok: false, error: `分辨率 ${size.width}x${size.height} 超出范围（要求 ${AVATAR_MIN_DIM}x${AVATAR_MIN_DIM} ~ ${AVATAR_MAX_DIM}x${AVATAR_MAX_DIM}）` };
+  }
+
+  const ext = imageUtil.MIME_EXT[mime] || format;
+  const name = `avatar_${user.id}_${Date.now()}.${ext}`;
+  try {
+    fs.mkdirSync(AVATAR_DIR, { recursive: true });
+    fs.writeFileSync(path.join(AVATAR_DIR, name), buffer);
+  } catch (e) {
+    return { ok: false, error: `保存失败（${e.message}）` };
+  }
+  user.avatarUrl = `/uploads/avatars/${name}`;
+  user.updatedAt = new Date().toISOString();
+  db.save();
+  return { ok: true, data: { avatarUrl: user.avatarUrl } };
+}
+
+/**
+ * 自助壁纸：设置聊天区背景壁纸（上传图片落盘 / 外部 URL）+ 毛玻璃开关。
+ * @param {string} userId
+ * @param {object} body { wallpaper?: string, blur?: boolean }
+ *   - wallpaper：'/uploads/...' 或 http(s) URL 或 ''（清除）
+ *   - dataUrl：壁纸图片 data URI（上传场景，落盘为 /uploads/wallpapers/...）
+ * @returns {{ok:true, data:{wallpaper, wallpaperBlur}}|{ok:false, error:string}}
+ */
+function setWallpaper(userId, body) {
+  const imageUtil = require('./imageUtil');
+  const data = db.load();
+  const user = data.users.find((u) => u.id === userId);
+  if (!user) return { ok: false, error: '账号不存在' };
+  if (user.status !== 'active') return { ok: false, error: '账号已停用' };
+
+  const wallpaperDir = process.env.XFYUN_WALLPAPER_DIR || path.join(__dirname, '..', 'public', 'uploads', 'wallpapers');
+  let wallpaper = user.wallpaper || '';
+  const blur = body && typeof body.blur === 'boolean' ? body.blur : (user.wallpaperBlur === true);
+
+  // 清除壁纸
+  if (body && (body.wallpaper === '' || body.clear === true) && !body.dataUrl) {
+    wallpaper = '';
+  } else if (body && typeof body.dataUrl === 'string' && body.dataUrl.startsWith('data:')) {
+    // 上传壁纸图片
+    const parsed = imageUtil.parseImageDataUrl(body.dataUrl);
+    if (parsed.error) return { ok: false, error: parsed.error };
+    const { mime, format, buffer } = parsed;
+    if (!buffer || buffer.length === 0) return { ok: false, error: '壁纸内容为空' };
+    if (buffer.length > 8 * 1024 * 1024) return { ok: false, error: '壁纸图片超过 8MB 上限' };
+    const size = imageUtil.imageSize(buffer, format);
+    if (!size || !size.width || !size.height) return { ok: false, error: '无法解析图片尺寸（文件可能损坏）' };
+    const ext = imageUtil.MIME_EXT[mime] || format;
+    const name = `wallpaper_${user.id}_${Date.now()}.${ext}`;
+    try {
+      fs.mkdirSync(wallpaperDir, { recursive: true });
+      fs.writeFileSync(path.join(wallpaperDir, name), buffer);
+    } catch (e) {
+      return { ok: false, error: `保存失败（${e.message}）` };
+    }
+    wallpaper = `/uploads/wallpapers/${name}`;
+  } else if (body && typeof body.wallpaper === 'string') {
+    // 外部 URL 或相对路径
+    const w = body.wallpaper.trim();
+    if (w && !/^https?:\/\//i.test(w) && !w.startsWith('/uploads/')) {
+      return { ok: false, error: '壁纸仅支持 http(s) URL 或本站上传图片' };
+    }
+    wallpaper = w.slice(0, 1000);
+  }
+
+  user.wallpaper = wallpaper;
+  user.wallpaperBlur = blur;
+  user.updatedAt = new Date().toISOString();
+  db.save();
+  return { ok: true, data: { wallpaper: user.wallpaper, wallpaperBlur: user.wallpaperBlur } };
+}
 
 function isUserLocked(username) {
   const rec = userFailMap.get(username);
@@ -404,6 +526,8 @@ module.exports = {
   setStatus,
   login,
   changePassword,
+  setAvatar,
+  setWallpaper,
   isUserLocked,
   userLockRemainSec,
   registerUserFail,

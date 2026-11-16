@@ -18,6 +18,16 @@ const DEFAULT_DB = {
   auditLogs: [],    // 操作留痕（P1 启用，环形缓冲保留最近若干条）
   // —— 对话分享（快照 + token）：{ id, token, convId, title, createdAt, expiresAt, createdBy, snapshot } ——
   shares: [],
+  // —— 知识库 MVP：{ id, name, remark, ownerId, createdAt, updatedAt, files:[...], chunks:[...] } ——
+  kbs: [],
+  // —— 智能体：{ id, presetKey?, name, emoji, desc, systemPrompt, visibility, ownerId, ownerName, ... } ——
+  agents: [],
+  // —— 画布工作流：{ id, name, desc, nodes:[{id,type,x,y,cfg}], edges:[{from,to}], ... } ——
+  workflows: [],
+  // —— MCP 服务：{ id, name, transport, command, args, url, env, enabled, ... } ——
+  mcps: [],
+  // —— 插件安装：{ key, name, enabled, installedAt } ——
+  plugins: [],
   settings: {
     autoSwitch: true,
     cooldownSec: 30
@@ -53,6 +63,11 @@ function load() {
   if (!Array.isArray(cache.users)) cache.users = [];
   if (!Array.isArray(cache.auditLogs)) cache.auditLogs = [];
   if (!Array.isArray(cache.shares)) cache.shares = [];
+  if (!Array.isArray(cache.kbs)) cache.kbs = [];
+  if (!Array.isArray(cache.agents)) cache.agents = [];
+  if (!Array.isArray(cache.workflows)) cache.workflows = [];
+  if (!Array.isArray(cache.mcps)) cache.mcps = [];
+  if (!Array.isArray(cache.plugins)) cache.plugins = [];
   return cache;
 }
 

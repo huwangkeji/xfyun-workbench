@@ -43,7 +43,7 @@ function todayStart() {
  */
 function list(query = {}, viewer = null) {
   const {
-    status, keyword, model, configId, dateFrom, dateTo, sort, dir
+    status, keyword, model, configId, agentId, dateFrom, dateTo, sort, dir
   } = query;
 
   let logs = scope(db.load().logs, viewer);
@@ -51,6 +51,7 @@ function list(query = {}, viewer = null) {
   if (status) logs = logs.filter((l) => l.status === status);
   if (model) logs = logs.filter((l) => l.model === model);
   if (configId) logs = logs.filter((l) => l.configId === configId);
+  if (agentId) logs = logs.filter((l) => l.agentId === agentId);
   if (dateFrom) {
     const from = Date.parse(dateFrom);
     if (Number.isFinite(from)) logs = logs.filter((l) => Date.parse(l.time) >= from);

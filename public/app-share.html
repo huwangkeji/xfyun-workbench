@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>应用分享 · 同聪星火</title>
+  <script>
+    /* 主题初始化：与全站一致（默认浅色） */
+    try {
+      var _t = localStorage.getItem('wb_theme');
+      if (!localStorage.getItem('wb_theme_v2')) {
+        if (!_t || _t === 'dark') { _t = 'light'; localStorage.setItem('wb_theme', 'light'); }
+        localStorage.setItem('wb_theme_v2', '1');
+      }
+      document.documentElement.dataset.theme = _t || 'light';
+    } catch (_) { document.documentElement.dataset.theme = 'light'; }
+  </script>
+  <link rel="stylesheet" href="/assets/style.css" />
+</head>
+<body class="wb-page">
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" id="asEmoji">🤖</span>
+      <span id="asName">加载中…</span>
+      <span class="tag">AI 助手 · 公开链接</span>
+    </div>
+    <div class="top-actions">
+      <span class="hint" id="asQpm"></span>
+    </div>
+  </header>
+
+  <main class="as-page">
+    <div class="as-card">
+      <div class="as-head">
+        <div class="as-title"><b id="asTitle">应用分享</b><span id="asDesc" class="as-desc"></span></div>
+      </div>
+      <div class="as-body chat-messages" id="asMessages"></div>
+      <div class="as-suggests" id="asSuggests"></div>
+      <div class="as-vars" id="asVars" style="display:none"></div>
+      <div class="as-inputrow">
+        <textarea id="asInput" rows="1" placeholder="输入你的问题，Enter 发送（Shift+Enter 换行）" disabled></textarea>
+        <button class="btn primary" id="asSend" disabled>发送</button>
+      </div>
+      <div class="as-foot">内容由 AI 生成，仅供参考 · 由 同聪星火 提供技术支持</div>
+    </div>
+  </main>
+
+  <!-- 访问密码门 -->
+  <div class="modal-mask" id="asGate" style="display:none">
+    <div class="modal" style="max-width:380px">
+      <div class="modal-head"><span>🔒 访问验证</span></div>
+      <div class="modal-body">
+        <p class="hint" style="margin-bottom:12px">该分享链接已开启身份验证，请输入访问密码。</p>
+        <label class="field"><span>访问密码</span><input type="password" class="input" id="asPwd" placeholder="请输入访问密码" /></label>
+      </div>
+      <div class="modal-foot">
+        <button class="btn primary" id="asGateBtn" style="width:100%">验证并进入</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-wrap" id="toastWrap"></div>
+
+  <script src="/assets/markdown.js"></script>
+  <script src="/assets/app-share.js"></script>
+</body>
+</html>

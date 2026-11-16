@@ -49,4 +49,33 @@
       a.addEventListener('click', () => links.classList.remove('open'));
     });
   }
+
+  /* ---------- 导航滚动投影 ---------- */
+  const nav = document.querySelector('.lp-nav');
+  if (nav) {
+    const onScroll = () => nav.classList.toggle('is-scrolled', window.scrollY > 8);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+  }
+
+  /* ---------- 滚动渐显（尊重系统"减弱动效"设置） ---------- */
+  const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const targets = document.querySelectorAll(
+    '.lp-section-head, .lp-grid > .lp-card, .lp-strip-item, .lp-faq details, .lp-hero-visual'
+  );
+  if (reduceMotion || !('IntersectionObserver' in window)) return; // CSS 已兜底为静态可见
+  targets.forEach((el, i) => {
+    el.classList.add('reveal');
+    // 同一网格内的卡片按序错开 60ms，形成渐次入场
+    el.style.setProperty('--reveal-delay', `${(i % 4) * 0.06}s`);
+  });
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach((e) => {
+      if (e.isIntersecting) {
+        e.target.classList.add('reveal-in');
+        io.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+  targets.forEach((el) => io.observe(el));
 })();

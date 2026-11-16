@@ -20,7 +20,7 @@ const path = require('path');
 const db = require('./db');
 const conversationService = require('./conversationService');
 
-const UPLOAD_DIR = path.join(__dirname, '..', 'public', 'uploads');
+const UPLOAD_DIR = process.env.XFYUN_UPLOAD_DIR || path.join(__dirname, '..', 'public', 'uploads');
 const UPLOAD_ROOT = path.resolve(UPLOAD_DIR);
 const MAX_INLINE_BYTES = 2 * 1024 * 1024; // 快照内联 base64 图片总量上限（约对应 1.4MB 原始字节）
 const MIME_BY_EXT = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };

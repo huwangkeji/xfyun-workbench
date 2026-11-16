@@ -3,112 +3,507 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>员工登录 · 同聪星火</title>
-  <link rel="stylesheet" href="/assets/style.css" />
+  <title data-brand="siteTitle" data-template="员工登录 · {site}">员工登录 · 同聪星火</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      color: #0f172a;
+      background: #fff;
+    }
+
+    .login-wrap { display: flex; min-height: 100vh; }
+
+    /* ============ 左侧品牌面板（与访客登录页同款） ============ */
+    .login-left {
+      flex: 1 1 70%;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      padding: 44px 56px 36px;
+      color: #fff;
+      background:
+        radial-gradient(900px 620px at 82% 8%, rgba(64, 118, 227, .38), transparent 62%),
+        radial-gradient(760px 540px at 6% 96%, rgba(43, 92, 214, .32), transparent 60%),
+        linear-gradient(133deg, #081733 0%, #0d2657 48%, #1c47b8 100%);
+    }
+    .brand { display: flex; align-items: center; gap: 14px; }
+    .brand-logo {
+      width: 46px; height: 46px; border-radius: 12px; flex: none;
+      display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, #4f8bfb 0%, #2456e0 100%);
+      box-shadow: 0 6px 18px rgba(21, 68, 180, .45);
+    }
+    .brand-logo svg { width: 24px; height: 24px; }
+    .brand-name { font-size: 21px; font-weight: 800; letter-spacing: .5px; }
+    .brand-sub { font-size: 12.5px; color: rgba(255, 255, 255, .55); margin-top: 3px; }
+
+    .hero { margin-top: auto; padding-top: 48px; }
+    .hero h1 { font-size: 36px; line-height: 1.42; font-weight: 800; letter-spacing: .5px; }
+    .hero p {
+      margin-top: 18px; max-width: 560px;
+      font-size: 14.5px; line-height: 1.85; color: rgba(255, 255, 255, .68);
+    }
+
+    .feat-grid {
+      margin-top: 40px; margin-bottom: auto;
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px; max-width: 600px;
+    }
+    .feat {
+      display: flex; gap: 12px; align-items: flex-start;
+      padding: 16px 18px; border-radius: 12px;
+      background: rgba(255, 255, 255, .07);
+      border: 1px solid rgba(255, 255, 255, .13);
+      backdrop-filter: blur(2px);
+    }
+    .feat-icon {
+      width: 34px; height: 34px; flex: none; border-radius: 9px;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(255, 255, 255, .10);
+      color: #cfe0ff;
+    }
+    .feat-icon svg { width: 17px; height: 17px; }
+    .feat h3 { font-size: 14.5px; font-weight: 700; }
+    .feat p { margin-top: 5px; font-size: 12.5px; line-height: 1.6; color: rgba(255, 255, 255, .62); }
+
+    .left-foot { margin-top: 40px; font-size: 12.5px; color: rgba(255, 255, 255, .42); }
+
+    /* ============ 右侧认证面板 ============ */
+    .login-right {
+      flex: 0 0 30%;
+      min-width: 380px; max-width: 640px;
+      display: flex; align-items: center; justify-content: center;
+      padding: 48px 40px;
+      overflow-y: auto;
+      background: #fff;
+    }
+    .login-box { width: 100%; max-width: 360px; }
+
+    .mobile-brand { display: none; }
+
+    .panel-title { font-size: 26px; font-weight: 800; letter-spacing: .5px; }
+    .panel-sub { margin-top: 10px; font-size: 14px; color: #64748b; }
+
+    .auth-hint {
+      display: none; margin-top: 18px;
+      padding: 10px 12px; border-radius: 9px;
+      font-size: 13px; line-height: 1.6;
+      background: #fffbeb; border: 1px solid #fde68a; color: #92400e;
+    }
+    .auth-hint.show { display: block; }
+
+    .login-err {
+      display: none; margin-top: 18px;
+      padding: 10px 12px; border-radius: 9px;
+      font-size: 13px; line-height: 1.5;
+      background: #fef2f2; border: 1px solid #fecaca; color: #dc2626;
+    }
+    .login-err.show { display: block; }
+
+    /* 图标内嵌输入框（登录面板） */
+    .field { display: block; position: relative; margin-top: 22px; }
+    .field .icon-left {
+      position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+      color: #94a3b8; display: flex; pointer-events: none;
+    }
+    .field .icon-left svg { width: 17px; height: 17px; }
+    .field input {
+      width: 100%; height: 46px;
+      padding: 0 46px 0 42px;
+      font-size: 14px; color: #0f172a;
+      border: 1px solid #e2e8f0; border-radius: 10px;
+      outline: none; background: #fff;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .field input.no-icon-right { padding-right: 14px; }
+    .field input::placeholder { color: #9aa7ba; }
+    .field input:focus { border-color: #1a6df5; box-shadow: 0 0 0 3px rgba(26, 109, 245, .13); }
+    .eye-btn {
+      position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+      width: 36px; height: 36px; border: 0; background: transparent;
+      border-radius: 8px; cursor: pointer; color: #94a3b8;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .eye-btn:hover { color: #475569; background: #f1f5f9; }
+    .eye-btn svg { width: 18px; height: 18px; }
+
+    /* 标签式输入框（注册 / 改密面板） */
+    .field-labeled { display: block; margin-top: 16px; }
+    .field-labeled > span {
+      display: block; margin-bottom: 6px;
+      font-size: 13px; font-weight: 500; color: #475569;
+    }
+    .field-labeled input {
+      width: 100%; height: 44px; padding: 0 14px;
+      font-size: 14px; color: #0f172a;
+      border: 1px solid #e2e8f0; border-radius: 10px;
+      outline: none; background: #fff;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .field-labeled input::placeholder { color: #9aa7ba; }
+    .field-labeled input:focus { border-color: #1a6df5; box-shadow: 0 0 0 3px rgba(26, 109, 245, .13); }
+
+    .submit-btn {
+      width: 100%; height: 46px; margin-top: 24px;
+      border: 0; border-radius: 10px; cursor: pointer;
+      background: #1a6df5; color: #fff;
+      font-size: 15px; font-weight: 600; letter-spacing: 6px; text-indent: 6px;
+      transition: background .15s, box-shadow .15s;
+    }
+    .submit-btn:hover { background: #155ed6; box-shadow: 0 6px 16px rgba(26, 109, 245, .28); }
+    .submit-btn:disabled { opacity: .65; cursor: default; box-shadow: none; }
+
+    .link-row { margin-top: 22px; text-align: center; }
+    .link-row a {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 14px; color: #475569; text-decoration: none;
+    }
+    .link-row a:hover { color: #1a6df5; }
+    .link-row a svg { width: 14px; height: 14px; }
+    .link-row a.primary-link { color: #1a6df5; font-weight: 500; }
+    .link-row a.primary-link:hover { color: #155ed6; }
+
+    .help-text { margin-top: 14px; text-align: center; font-size: 12.5px; color: #94a3b8; line-height: 1.7; }
+
+    /* ============ 响应式：窄屏隐藏左侧品牌面板 ============ */
+    @media (max-width: 920px) {
+      .login-left { display: none; }
+      .login-right { min-width: 0; max-width: none; flex: 1 1 auto; }
+      .mobile-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 34px; }
+      .mobile-brand .brand-logo { width: 40px; height: 40px; border-radius: 10px; }
+      .mobile-brand .brand-name { font-size: 18px; color: #0f172a; }
+      .mobile-brand .brand-sub { color: #64748b; }
+      .login-box { max-width: 340px; }
+    }
+
+    /* ============ 服务协议 / 隐私政策：同意勾选 + 弹窗查看 ============ */
+    .agree-row {
+      display: flex; align-items: center; flex-wrap: wrap; gap: 2px;
+      margin: 4px 0 14px; font-size: 12.5px; color: #64748b;
+    }
+    .agree-check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+    .agree-check input { width: 15px; height: 15px; accent-color: #1a66ff; cursor: pointer; }
+    .agree-link { color: #1a66ff; text-decoration: none; }
+    .agree-link:hover { text-decoration: underline; }
+    .agree-err { color: #dc2626; font-size: 12px; margin: -8px 0 10px; display: none; }
+
+    /* 协议全文弹窗 */
+    .agree-mask {
+      position: fixed; inset: 0; z-index: 100; display: none;
+      background: rgba(15, 23, 42, .5); backdrop-filter: blur(3px);
+      align-items: center; justify-content: center; padding: 20px;
+    }
+    .agree-mask.open { display: flex; }
+    .agree-modal {
+      width: 100%; max-width: 680px; max-height: 82vh; display: flex; flex-direction: column;
+      background: #fff; border-radius: 16px; box-shadow: 0 24px 60px rgba(15, 23, 42, .3); overflow: hidden;
+    }
+    .agree-modal-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 22px; border-bottom: 1px solid #e2e8f0; background: #f6f9ff;
+    }
+    .agree-modal-head b { font-size: 15.5px; color: #0f172a; }
+    .agree-close {
+      border: none; background: transparent; font-size: 20px; line-height: 1;
+      color: #64748b; cursor: pointer; padding: 4px 8px; border-radius: 6px;
+    }
+    .agree-close:hover { background: #e8eefc; color: #0f172a; }
+    .agree-modal-body {
+      padding: 18px 22px; overflow-y: auto; font-size: 13.5px; line-height: 1.9; color: #334155;
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .agree-modal-body em { color: #94a3b8; font-style: normal; }
+    @media (prefers-color-scheme: dark) {
+      .agree-modal { background: #131f36; }
+      .agree-modal-head { border-color: #2b3c5c; background: rgba(79, 139, 251, .08); }
+      .agree-modal-head b { color: #e4ebf7; }
+      .agree-modal-body { color: #c9d6ee; }
+      .agree-close:hover { background: #1c2b49; color: #e4ebf7; }
+    }
+  </style>
 </head>
 <body>
   <div class="login-wrap">
-    <!-- 登录表单 -->
-    <form class="login-card" id="loginForm" autocomplete="off">
-      <div class="login-brand">
-        <div class="t">同聪星火 · 员工登录</div>
-        <div class="s">团队账号体系 · 数据按角色隔离</div>
+
+    <!-- 左侧：品牌 + 卖点 -->
+    <aside class="login-left">
+      <div class="brand">
+        <div class="brand-logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+            <path d="M12 8l1.1 2.4L15.5 11.5l-2.4 1.1L12 15l-1.1-2.4L8.5 11.5l2.4-1.1z" fill="#fff" stroke="none"/>
+          </svg>
+        </div>
+        <div>
+          <div class="brand-name">同聪星火 · 对话工作台</div>
+          <div class="brand-sub">AI-Powered Team Chat Workbench</div>
+        </div>
       </div>
 
-      <div class="login-hint" id="initHint" style="display:none">
-        当前初始管理员账号（<b>owner</b>）仍在使用初始密码，登录后请立即修改。
-      </div>
-      <div class="login-err" id="loginErr"></div>
-
-      <label class="field">
-        <span>用户名</span>
-        <input class="input" id="username" type="text" placeholder="请输入用户名" autocomplete="username" autofocus />
-      </label>
-      <label class="field">
-        <span>密码</span>
-        <input class="input" id="pwd" type="password" placeholder="请输入密码" autocomplete="current-password" />
-      </label>
-      <button class="btn primary login-btn" id="loginBtn" type="submit">登 录</button>
-
-      <div class="login-foot">
-        <a href="/">← 返回首页</a><br/>
-        账号由管理员创建；如遇登录问题请联系管理员<br/>
-        <a href="#" id="showRegisterLink" style="display:none">没有账号？注册新账号 →</a>
-      </div>
-    </form>
-
-    <!-- 自助注册面板（仅管理员开放注册后显示） -->
-    <form class="login-card" id="registerForm" style="display:none">
-      <div class="login-brand">
-        <div class="t">注册新账号</div>
-        <div class="s">注册角色为成员</div>
+      <div class="hero">
+        <h1>让团队安全可控地<br />用上大模型能力</h1>
+        <p>多模型对话、多配置自动调度、图片理解、联网搜索；员工账号、角色权限、数据隔离与操作审计，私有化部署，数据在自己手里。</p>
       </div>
 
-      <div class="login-hint" show>
-        用户名将作为登录名，注册后自动登录。密码至少 8 位，须同时包含字母和数字。
+      <div class="feat-grid">
+        <div class="feat">
+          <div class="feat-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+          </div>
+          <div>
+            <h3>多模型自动调度</h3>
+            <p>多个 模型配置按优先级自动切换，失败自动冷却重试</p>
+          </div>
+        </div>
+        <div class="feat">
+          <div class="feat-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          </div>
+          <div>
+            <h3>团队账号体系</h3>
+            <p>员工账号四级角色权限，数据按人隔离、操作留痕</p>
+          </div>
+        </div>
+        <div class="feat">
+          <div class="feat-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          </div>
+          <div>
+            <h3>图片理解</h3>
+            <p>粘贴 / 拖拽上传，多模态消息直接发给视觉模型</p>
+          </div>
+        </div>
+        <div class="feat">
+          <div class="feat-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          </div>
+          <div>
+            <h3>联网搜索</h3>
+            <p>一键开关按次控制，实时获取信息，回答不再过时</p>
+          </div>
+        </div>
       </div>
-      <div class="login-err" id="registerErr"></div>
 
-      <label class="field">
-        <span>用户名（3-20 位小写字母 / 数字 / 下划线）</span>
-        <input class="input" id="r_username" type="text" placeholder="如 zhangsan" autocomplete="username" />
-      </label>
-      <label class="field">
-        <span>昵称</span>
-        <input class="input" id="r_displayName" type="text" placeholder="如 张三" />
-      </label>
-      <label class="field">
-        <span>密码（至少 8 位，须含字母和数字）</span>
-        <input class="input" id="r_pwd1" type="password" placeholder="请输入密码" autocomplete="new-password" />
-      </label>
-      <label class="field">
-        <span>确认密码</span>
-        <input class="input" id="r_pwd2" type="password" placeholder="再次输入密码" autocomplete="new-password" />
-      </label>
-      <button class="btn primary login-btn" id="registerBtn" type="submit">注 册 并 登 录</button>
+      <div class="left-foot">© 2026 沧州虎王科技 · 同聪星火内部工作台</div>
+    </aside>
 
-      <div class="login-foot">
-        <a href="#" id="backToLogin2">← 返回登录</a>
+    <!-- 右侧：认证面板（登录 / 注册 / 改密 三面板切换） -->
+    <main class="login-right">
+      <div class="login-box">
+        <div class="mobile-brand">
+          <div class="brand-logo" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+              <path d="M12 8l1.1 2.4L15.5 11.5l-2.4 1.1L12 15l-1.1-2.4L8.5 11.5l2.4-1.1z" fill="#fff" stroke="none"/>
+            </svg>
+          </div>
+          <div>
+            <div class="brand-name">同聪星火 · 对话工作台</div>
+            <div class="brand-sub">AI-Powered Team Chat Workbench</div>
+          </div>
+        </div>
+
+        <!-- 面板 1：登录 -->
+        <form id="loginForm" autocomplete="off">
+          <h1 class="panel-title">员工登录</h1>
+          <div class="panel-sub"><span id="loginTagline">团队账号体系 · 数据按角色隔离</span></div>
+
+          <div class="auth-hint" id="initHint">
+            当前初始管理员账号（<b>owner</b>）仍在使用初始密码，登录后请立即修改。
+          </div>
+          <div class="login-err" id="loginErr"></div>
+
+          <label class="field">
+            <span class="icon-left" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </span>
+            <input id="username" type="text" placeholder="用户名" autocomplete="username" autofocus />
+          </label>
+          <label class="field">
+            <span class="icon-left" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+            </span>
+            <input id="pwd" type="password" placeholder="密码" autocomplete="current-password" />
+            <button class="eye-btn" id="eyeBtn" type="button" aria-label="显示或隐藏密码">
+              <svg id="eyeOn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              <svg id="eyeOff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+            </button>
+          </label>
+          <div class="agree-row">
+            <label class="agree-check">
+              <input type="checkbox" id="agreeLogin" />
+              <span>我已阅读并同意</span>
+            </label>
+            <a href="#" class="agree-link" data-page="service">《服务协议》</a>
+            <a href="#" class="agree-link" data-page="privacy">《隐私政策》</a>
+          </div>
+          <button class="submit-btn" id="loginBtn" type="submit">登 录</button>
+
+          <div class="link-row">
+            <a href="/">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+              返回首页
+            </a>
+          </div>
+          <div class="help-text">账号由管理员创建；如遇登录问题请联系管理员</div>
+          <div class="link-row" style="margin-top:10px">
+            <a href="#" id="showRegisterLink" class="primary-link" style="display:none">没有账号？注册新账号 →</a>
+          </div>
+        </form>
+
+        <!-- 面板 2：自助注册（仅管理员开放注册后显示） -->
+        <form id="registerForm" style="display:none" autocomplete="off">
+          <h1 class="panel-title">注册新账号</h1>
+          <div class="panel-sub">注册角色为成员，注册后自动登录</div>
+
+          <div class="auth-hint show">
+            用户名将作为登录名。密码至少 8 位，须同时包含字母和数字。
+          </div>
+          <div class="login-err" id="registerErr"></div>
+
+          <label class="field-labeled">
+            <span>用户名（3-20 位小写字母 / 数字 / 下划线）</span>
+            <input id="r_username" type="text" placeholder="如 zhangsan" autocomplete="username" />
+          </label>
+          <label class="field-labeled">
+            <span>昵称</span>
+            <input id="r_displayName" type="text" placeholder="如 张三" />
+          </label>
+          <label class="field-labeled">
+            <span>密码（至少 8 位，须含字母和数字）</span>
+            <input id="r_pwd1" type="password" placeholder="请输入密码" autocomplete="new-password" />
+          </label>
+          <label class="field-labeled">
+            <span>确认密码</span>
+            <input id="r_pwd2" type="password" placeholder="再次输入密码" autocomplete="new-password" />
+          </label>
+          <div class="agree-row">
+            <label class="agree-check">
+              <input type="checkbox" id="agreeRegister" />
+              <span>我已阅读并同意</span>
+            </label>
+            <a href="#" class="agree-link" data-page="service">《服务协议》</a>
+            <a href="#" class="agree-link" data-page="privacy">《隐私政策》</a>
+          </div>
+          <button class="submit-btn" id="registerBtn" type="submit">注 册 并 登 录</button>
+
+          <div class="link-row">
+            <a href="#" id="backToLogin2">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+              返回登录
+            </a>
+          </div>
+        </form>
+
+        <!-- 面板 3：首次登录 / 强制改密 -->
+        <form id="changePwdForm" style="display:none" autocomplete="off">
+          <h1 class="panel-title">设置新密码</h1>
+          <div class="panel-sub">为了账号安全，请先修改密码</div>
+
+          <div class="auth-hint show">
+            当前使用的是初始或临时密码，通过校验后即可进入工作台。
+          </div>
+          <div class="login-err" id="changeErr"></div>
+
+          <label class="field-labeled">
+            <span>当前密码</span>
+            <input id="c_old" type="password" placeholder="请输入当前密码" autocomplete="current-password" />
+          </label>
+          <label class="field-labeled">
+            <span>新密码（至少 8 位，须含字母和数字）</span>
+            <input id="c_new1" type="password" placeholder="请输入新密码" autocomplete="new-password" />
+          </label>
+          <label class="field-labeled">
+            <span>确认新密码</span>
+            <input id="c_new2" type="password" placeholder="再次输入新密码" autocomplete="new-password" />
+          </label>
+          <button class="submit-btn" id="changeBtn" type="submit">保存并重新登录</button>
+
+          <div class="link-row">
+            <a href="#" id="backToLogin">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+              返回登录
+            </a>
+          </div>
+        </form>
       </div>
-    </form>
-
-    <!-- 首次登录 / 强制改密面板 -->
-    <form class="login-card" id="changePwdForm" style="display:none">
-      <div class="login-brand">
-        <div class="t">设置新密码</div>
-        <div class="s">为了账号安全，请先修改密码</div>
-      </div>
-
-      <div class="login-hint" show>
-        当前使用的是初始或临时密码，通过校验后即可进入工作台。
-      </div>
-      <div class="login-err" id="changeErr"></div>
-
-      <label class="field">
-        <span>当前密码</span>
-        <input class="input" id="c_old" type="password" placeholder="请输入当前密码" autocomplete="current-password" />
-      </label>
-      <label class="field">
-        <span>新密码（至少 8 位，须含字母和数字）</span>
-        <input class="input" id="c_new1" type="password" placeholder="请输入新密码" autocomplete="new-password" />
-      </label>
-      <label class="field">
-        <span>确认新密码</span>
-        <input class="input" id="c_new2" type="password" placeholder="再次输入新密码" autocomplete="new-password" />
-      </label>
-      <button class="btn primary login-btn" id="changeBtn" type="submit">保存并重新登录</button>
-
-      <div class="login-foot">
-        <a href="#" id="backToLogin">← 返回登录</a>
-      </div>
-    </form>
+    </main>
   </div>
 
+  <!-- 服务协议 / 隐私政策 全文弹窗 -->
+  <div class="agree-mask" id="agreeMask">
+    <div class="agree-modal" role="dialog" aria-modal="true">
+      <div class="agree-modal-head">
+        <b id="agreeTitle">服务协议</b>
+        <button class="agree-close" id="agreeClose" type="button" aria-label="关闭">×</button>
+      </div>
+      <div class="agree-modal-body" id="agreeBody">加载中…</div>
+    </div>
+  </div>
+
+  <script src="/assets/branding.js"></script>
+  <script>
+    /* ============ 服务协议 / 隐私政策：内容加载 + 弹窗查看 ============
+       内容来自后台「系统设置 → 页面管理」，经公开接口 /api/notice 下发；
+       未自定义时展示内置默认文案。链接点击新弹窗查看（不跳转）。 */
+    (function () {
+      'use strict';
+      var DEFAULTS = {
+        service: {
+          title: '服务协议',
+          text: '欢迎使用本平台。使用本平台前，请仔细阅读以下条款：\n\n1. 账号使用：员工账号仅限本人使用，禁止转借、共享；账号下的所有操作视为本人行为。\n\n2. 合规使用：不得利用本平台从事违反法律法规、危害网络安全、侵犯他人合法权益的活动；不得输入或传播违法、淫秽、暴力等不良信息。\n\n3. AI 生成内容：模型输出由人工智能自动生成，可能存在错误或遗漏，仅供参考，不构成专业建议；重要决策请人工复核。\n\n4. 数据与隐私：对话数据保存在企业自部署的服务器中，管理员可按企业策略进行管理，请勿输入国家秘密、商业秘密或个人敏感信息。\n\n5. 服务变更：平台有权根据运营情况对服务进行调整、中断或终止，并尽可能提前公告。\n\n继续登录即视为您已阅读、理解并同意上述条款。'
+        },
+        privacy: {
+          title: '隐私政策',
+          text: '我们高度重视用户隐私。本政策说明本平台对个人信息的处理方式：\n\n1. 收集范围：为提供登录与对话服务，本平台收集并存储您的用户名、登录时间、登录 IP、对话内容及相关日志。\n\n2. 使用目的：上述信息仅用于身份认证、账号安全、故障排查与用量统计，不用于任何对外营销。\n\n3. 存储位置：本平台为私有化部署，全部数据保存在企业自有服务器中，不出企业网络边界。\n\n4. 访问控制：对话数据按账号隔离，仅本人和管理员（依据企业管理策略）可访问；全量操作留痕可审计。\n\n5. 您的权利：如需更正或删除个人信息，请联系企业管理员处理。\n\n继续登录即视为您已阅读、理解并同意本隐私政策。'
+        }
+      };
+      var pages = { service: null, privacy: null }; // 远端自定义内容
+      var mask = document.getElementById('agreeMask');
+      var titleEl = document.getElementById('agreeTitle');
+      var bodyEl = document.getElementById('agreeBody');
+
+      function openModal(kind) {
+        var def = DEFAULTS[kind] || DEFAULTS.service;
+        var custom = pages[kind];
+        titleEl.textContent = def.title;
+        bodyEl.textContent = (custom && custom.trim()) ? custom : def.text;
+        mask.classList.add('open');
+      }
+      function closeModal() { mask.classList.remove('open'); }
+
+      document.querySelectorAll('.agree-link').forEach(function (a) {
+        a.addEventListener('click', function (e) {
+          e.preventDefault();
+          openModal(a.dataset.page === 'privacy' ? 'privacy' : 'service');
+        });
+      });
+      document.getElementById('agreeClose').addEventListener('click', closeModal);
+      mask.addEventListener('click', function (e) { if (e.target === mask) closeModal(); });
+      document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeModal(); });
+
+      // 拉取后台自定义文案（公开接口；失败静默用默认）
+      fetch('/api/notice').then(function (r) { return r.json(); }).then(function (d) {
+        if (!d || !d.ok || !d.data || !d.data.pages) return;
+        pages.service = d.data.pages.serviceAgreement || '';
+        pages.privacy = d.data.pages.privacyPolicy || '';
+        var tag = d.data.pages.loginTagline;
+        if (tag) {
+          var el = document.getElementById('loginTagline');
+          if (el) el.textContent = tag;
+        }
+      }).catch(function () { /* 静默 */ });
+    })();
+  </script>
   <script>
     (function () {
       'use strict';
       var loginForm = document.getElementById('loginForm');
       var changeForm = document.getElementById('changePwdForm');
+      var registerForm = document.getElementById('registerForm');
       var usernameEl = document.getElementById('username');
       var pwdEl = document.getElementById('pwd');
       var err = document.getElementById('loginErr');
@@ -120,6 +515,18 @@
       function hideErr() { err.classList.remove('show'); }
       function showChangeErr(msg) { changeErr.textContent = msg; changeErr.classList.add('show'); }
       function hideChangeErr() { changeErr.classList.remove('show'); }
+
+      // 密码显示 / 隐藏切换（登录面板）
+      var eyeBtn = document.getElementById('eyeBtn');
+      var eyeOn = document.getElementById('eyeOn');
+      var eyeOff = document.getElementById('eyeOff');
+      eyeBtn.addEventListener('click', function () {
+        var show = pwdEl.type === 'password';
+        pwdEl.type = show ? 'text' : 'password';
+        eyeOn.style.display = show ? 'none' : '';
+        eyeOff.style.display = show ? '' : 'none';
+        pwdEl.focus();
+      });
 
       /* ---------- 登录后目标页 ----------
        * 背景：原先登录成功一律跳 /app，从 /admin/login 或 /admin 守卫过来的管理员
@@ -153,7 +560,7 @@
         .then(function (r) { return r.json(); })
         .then(function (d) {
           if (d && d.ok && d.data && d.data.ownerMustChangePassword) {
-            document.getElementById('initHint').style.display = '';
+            document.getElementById('initHint').classList.add('show');
           }
           // 开放注册开关（默认关）
           if (d && d.ok && d.data && d.data.selfRegisterEnabled) {
@@ -203,6 +610,12 @@
         function showRegErr(msg) { regErr.textContent = msg; regErr.classList.add('show'); }
         function hideRegErr() { regErr.classList.remove('show'); }
         hideRegErr();
+        // 服务协议 / 隐私政策：未勾选同意则拦截
+        var agreeReg = document.getElementById('agreeRegister');
+        if (agreeReg && !agreeReg.checked) {
+          showRegErr('请先阅读并勾选同意《服务协议》和《隐私政策》');
+          return;
+        }
         var username = document.getElementById('r_username').value.trim();
         var displayName = document.getElementById('r_displayName').value.trim();
         var p1 = document.getElementById('r_pwd1').value;
@@ -239,6 +652,12 @@
       loginForm.addEventListener('submit', async function (e) {
         e.preventDefault();
         hideErr();
+        // 服务协议 / 隐私政策：未勾选同意则拦截
+        var agreeEl = document.getElementById('agreeLogin');
+        if (agreeEl && !agreeEl.checked) {
+          showErr('请先阅读并勾选同意《服务协议》和《隐私政策》');
+          return;
+        }
         var username = usernameEl.value.trim();
         var password = pwdEl.value;
         if (!username) { showErr('请输入用户名'); return; }

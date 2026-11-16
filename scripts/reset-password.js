@@ -108,7 +108,7 @@ const PORT = parseInt(process.env.PORT, 10) || 4000;
       console.log(' 请按以下顺序操作：');
       console.log('   1. 彻底关闭运行服务的黑色命令行窗口（启动.bat 的窗口），');
       console.log('      或在那个窗口里按 Ctrl+C；');
-      console.log('   2. 重新双击「重置密码.bat」；');
+      console.log('   2. 双击「启动.bat」，选 [4] 重置密码；');
       console.log('   3. 双击「启动.bat」重启服务；');
       console.log('   4. 用新密码登录（重启同时会解除连续输错导致的登录限流）。');
       console.log(' 确认要在服务运行中强行重置（重启后才生效）可加 --force。');
@@ -171,7 +171,7 @@ const PORT = parseInt(process.env.PORT, 10) || 4000;
   console.log('----------------------------------------------------');
   console.log(' 接下来：');
   console.log('   1. 双击「启动.bat」启动服务；');
-  console.log('   2. 打开登录页：http://127.0.0.1:4000/team-login');
+  console.log(`   2. 打开登录页：http://127.0.0.1:${PORT}/team-login`);
   console.log('   3. 用上方新密码登录（后台入口 /admin）。');
   console.log('====================================================');
 })().catch((e) => {

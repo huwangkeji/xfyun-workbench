@@ -3,7 +3,7 @@
 (function initTopMoreMenu() {
   function bind() {
     const btn = document.getElementById('topMoreBtn');
-    const menu = document.querySelector('.topbar .top-actions');
+    const menu = document.querySelector('.topbar .top-actions, .page-head .top-actions');
     if (!btn || !menu) return;
 
     function close() {
