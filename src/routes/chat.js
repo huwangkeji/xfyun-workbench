@@ -379,6 +379,10 @@ router.post('/', asyncHandler(async (req, res) => {
       'X-Accel-Buffering': 'no' // 声明关闭代理缓冲，保证 chunk 实时到达客户端
     });
     if (typeof res.flushHeaders === 'function') res.flushHeaders();
+    // 知识库步骤事件：前端思考区展示「已检索知识库」（在透传上游 SSE 前发出，前端解析忽略未知事件）
+    if (kbResult.injected) {
+      res.write(`data: ${JSON.stringify({ kbStep: { name: kbResult.kbName, chunks: kbResult.chunks } })}\n\n`);
+    }
 
     const upstream = streamResult.data; // fetch Response，body 为 web ReadableStream
     Readable.fromWeb(upstream.body).pipe(res);

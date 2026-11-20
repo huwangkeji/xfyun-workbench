@@ -17,6 +17,12 @@ const els = {
   newConvBtn: document.getElementById('newConvBtn'),
   delConvBtn: document.getElementById('delConvBtn'),
   convList: document.getElementById('convList'),
+  batchConvBtn: document.getElementById('batchConvBtn'),
+  convBatchBar: document.getElementById('convBatchBar'),
+  batchAllChk: document.getElementById('batchAllChk'),
+  batchCount: document.getElementById('batchCount'),
+  batchDelBtn: document.getElementById('batchDelBtn'),
+  batchCancelBtn: document.getElementById('batchCancelBtn'),
   wbLogoutBtn: document.getElementById('wbLogoutBtn'),
   toastWrap: document.getElementById('toastWrap'),
   thinkingBtn: document.getElementById('thinkingBtn'),
@@ -110,6 +116,7 @@ let modelSwitchNotice = null; // 「已切换模型」对话框提示节点
 let pendingAttachments = []; // 通用附件（文档 / 音视频 / 压缩包）：{ id, name, size, mime, status, url }
 let responseMode = 'chat';   // 响应模式：chat 对话 / workflow 工作流
 let wfModeId = '';           // 工作流模式下选中的工作流
+let lastSentText = '';       // 最近一次发送的问题（⚡ 快速回答回填用）
 let currentUser = null;      // 当前登录员工 {id, role, username, displayName}（用于自建应用/知识库的归属判定）
 
 /* ================= 会话参数（深度思考 / 思考强度 / 联网 / 系统提示） =================
@@ -1403,21 +1410,29 @@ function renderConvList() {
   }
   conversations.forEach((c) => {
     const item = document.createElement('div');
-    item.className = `conv-item ${c.id === (currentConv && currentConv.id) ? 'active' : ''}`;
+    const selected = batchMode && batchSelected.has(c.id);
+    item.className = `conv-item ${c.id === (currentConv && currentConv.id) ? 'active' : ''}${selected ? ' selected' : ''}`;
     const n = (c.messages && c.messages.length) || c.count || 0;
     item.innerHTML = `
+      <div class="conv-check"><span class="chk-box"></span></div>
       <div class="conv-body">
         <div class="conv-title">${esc(c.title || '新对话')}</div>
         <div class="conv-sub">${n} 条 · ${esc(shortTime(c.updatedAt))}</div>
       </div>
       <button class="conv-del" title="删除该对话">×</button>`;
-    item.querySelector('.conv-body').addEventListener('click', () => switchConv(c.id));
-    item.querySelector('.conv-del').addEventListener('click', (e) => {
-      e.stopPropagation();
-      deleteConv(c.id);
-    });
+    if (batchMode) {
+      // 多选模式：整行点击 = 勾选/取消，不切换会话
+      item.addEventListener('click', () => toggleBatchItem(c.id));
+    } else {
+      item.querySelector('.conv-body').addEventListener('click', () => switchConv(c.id));
+      item.querySelector('.conv-del').addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteConv(c.id);
+      });
+    }
     els.convList.appendChild(item);
   });
+  if (batchMode) updateBatchBar();
 }
 
 function shortTime(iso) {
@@ -1474,6 +1489,84 @@ els.delConvBtn.addEventListener('click', () => {
   if (currentConv) deleteConv(currentConv.id);
   else toast('请先选择一个对话', 'error');
 });
+
+/* ---------- 会话批量多选删除 ---------- */
+let batchMode = false;
+const batchSelected = new Set();
+
+function setBatchMode(on) {
+  batchMode = on;
+  if (!on) batchSelected.clear();
+  els.convList.classList.toggle('batch-mode', on);
+  els.convBatchBar.hidden = !on;
+  els.batchConvBtn.classList.toggle('active', on);
+  els.batchConvBtn.textContent = on ? '退出多选' : '多选';
+  updateBatchBar();
+  renderConvList();
+}
+
+function updateBatchBar() {
+  if (batchMode) {
+    // 列表刷新后清掉已不存在的会话 id
+    const alive = new Set(conversations.map((c) => c.id));
+    for (const id of [...batchSelected]) if (!alive.has(id)) batchSelected.delete(id);
+  }
+  const n = batchSelected.size;
+  els.batchCount.textContent = `已选 ${n} 项`;
+  els.batchDelBtn.disabled = n === 0;
+  els.batchDelBtn.textContent = n ? `删除(${n})` : '删除';
+  els.batchAllChk.checked = n > 0 && n === conversations.length;
+}
+
+function toggleBatchItem(id) {
+  if (batchSelected.has(id)) batchSelected.delete(id);
+  else batchSelected.add(id);
+  updateBatchBar();
+  renderConvList();
+}
+
+async function batchDeleteConvs() {
+  const ids = [...batchSelected];
+  if (!ids.length) return;
+  if (!confirm(`确定删除选中的 ${ids.length} 个对话？选中对话的消息将被永久删除。`)) return;
+  let ok = 0;
+  let fail = 0;
+  for (const id of ids) {
+    try {
+      await api(`/api/conversations/${id}`, { method: 'DELETE' });
+      if (currentConv && currentConv.id === id) currentConv = null;
+      conversations = conversations.filter((c) => c.id !== id);
+      batchSelected.delete(id);
+      ok++;
+    } catch (e) {
+      fail++;
+    }
+  }
+  if (!conversations.length) {
+    // 全删光后补一个新会话，避免界面空转
+    try {
+      const conv = await api('/api/conversations', { method: 'POST', body: JSON.stringify({}) });
+      conversations = [conv];
+      currentConv = conv;
+    } catch (_) { /* 新建失败时保留空列表 */ }
+  } else if (!currentConv) {
+    await switchConv(conversations[0].id, false);
+  }
+  setBatchMode(false);
+  renderConvList();
+  renderMessages();
+  toast(fail ? `已删除 ${ok} 个对话，${fail} 个失败` : `已删除 ${ok} 个对话`, fail ? 'error' : 'success');
+}
+
+els.batchConvBtn.addEventListener('click', () => setBatchMode(!batchMode));
+els.batchCancelBtn.addEventListener('click', () => setBatchMode(false));
+els.batchAllChk.addEventListener('change', () => {
+  batchSelected.clear();
+  if (els.batchAllChk.checked) conversations.forEach((c) => batchSelected.add(c.id));
+  updateBatchBar();
+  renderConvList();
+});
+els.batchDelBtn.addEventListener('click', batchDeleteConvs);
 
 /* ================= 消息渲染 ================= */
 
@@ -1925,6 +2018,7 @@ function buildUserContent(text, images) {
 
 async function send() {
   const text = els.input.value.trim();
+  lastSentText = text;
   if (sending) return;
   if (!text && !pendingImages.length) return;
   if (!currentConfigId) {
@@ -2006,9 +2100,14 @@ async function send() {
       return;
     }
 
-    const data = await api('/api/chat', {
+    /* —— 流式对话（SSE）：思考过程与正文增量渲染（元宝式） ——
+     * 服务端在显式 configId + stream=true 时以 SSE 透传上游：
+     *   data: {choices:[{delta:{reasoning_content|content}}]} … data: [DONE]
+     * 另有服务端自有事件 data: {kbStep:{name,chunks}}（知识库步骤提示）。 */
+    const resp = await fetch('/api/chat', {
       method: 'POST',
       signal: chatAbort.signal,
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         configId: currentConfigId,
         messages: history,
@@ -2020,35 +2119,145 @@ async function send() {
         reasoningEffort: params.reasoningEffort,
         webSearch: params.webSearch,
         // 知识库检索注入（开启且已选库才传；后端仅对登录员工生效）
-        // 知识库随智能体走：普通对话不注入（避免沿用上次智能体的库）
         kbId: currentAgent && params.useKb && params.kbId ? params.kbId : undefined,
-        systemPrompt: params.systemPrompt
+        systemPrompt: params.systemPrompt,
+        stream: true
       })
     });
-    const r = data.result;
-    const sec = ((data.latencyMs || 0) / 1000).toFixed(1);
-    const u = r.usage || {};
-    // 思考型模型可能只返回 reasoning_content；工具调用时 content 可能为空——分别回退展示
-    const replyText = r.content
-      || (r.reasoning_content ? `（模型未生成正文，以下为思考过程）\n${r.reasoning_content}` : '')
-      || (Array.isArray(r.tool_calls) && r.tool_calls.length
-        ? `（模型发起工具调用）\n${JSON.stringify(r.tool_calls, null, 2)}`
-        : '');
-    // 补充展示文档新增的响应明细：结束原因 / 工具调用 / 推理 token
-    const bits = [];
-    if (r.finish_reason && r.finish_reason !== 'stop') bits.push(`结束原因 ${esc(r.finish_reason)}`);
-    if (Array.isArray(r.tool_calls) && r.tool_calls.length) {
-      bits.push(`工具调用 ${esc(r.tool_calls.map((t) => t.function && t.function.name).filter(Boolean).join(', ') || '未知')}`);
+    if (!resp.ok) {
+      const errData = await resp.json().catch(() => ({}));
+      throw new Error(errData.error || `HTTP ${resp.status}`);
     }
-    if (u.reasoning_tokens) bits.push(`推理 ${u.reasoning_tokens} tokens`);
-    if (u.cached_tokens) bits.push(`缓存命中 ${u.cached_tokens} tokens`);
-    const metaExtra = bits.length ? ` · ${bits.join(' · ')}` : '';
-    addMsg('assistant', replyText || '(模型未返回正文)', {
-      meta: `耗时 ${sec}s · 输入 ${u.prompt_tokens ?? '-'} · 输出 ${u.completion_tokens ?? '-'} · 总 ${u.total_tokens ?? '-'} tokens · 模型 ${esc(r.model_id || '')}${metaExtra}`
+    if (!resp.body) throw new Error('当前浏览器不支持流式读取');
+
+    // 消息容器：🧠 思考区块 + 正文气泡（元宝式布局）
+    const holder = document.createElement('div');
+    holder.className = 'msg assistant';
+    holder.innerHTML = `
+      <div class="avatar">AI</div>
+      <div class="msg-main">
+        <div class="think-box" id="liveThink">
+          <div class="think-head">
+            <span class="think-ico">🧠</span>
+            <span class="think-status thinking">正在思考</span>
+            <span class="think-time">0s</span>
+            <button class="think-toggle" type="button" title="展开 / 折叠思考过程">▾</button>
+            <button class="think-fast" type="button" title="停止当前回答，关闭深度思考并重发同一问题">⚡ 快速回答</button>
+          </div>
+          <pre class="think-body"></pre>
+        </div>
+        <div class="bubble md"><span class="stream-cursor"></span></div>
+        <div class="meta"></div>
+      </div>`;
+    els.messages.appendChild(holder);
+    holder.scrollIntoView({ block: 'nearest' });
+
+    const thinkBody = holder.querySelector('.think-body');
+    const thinkStatus = holder.querySelector('.think-status');
+    const thinkTimeEl = holder.querySelector('.think-time');
+    const thinkBox = holder.querySelector('.think-box');
+    const bubbleEl = holder.querySelector('.bubble.md');
+
+    holder.querySelector('.think-toggle').addEventListener('click', () => {
+      thinkBox.classList.toggle('collapsed');
     });
+    holder.querySelector('.think-fast').addEventListener('click', () => {
+      if (!lastSentText) return;
+      chatAbort.abort(); // 中止当前思考（服务端调用仍会完成）
+      // 回填问题 + 关闭深度思考：点击发送即快速重答
+      setTimeout(() => {
+        els.input.value = lastSentText;
+        params.enableThinking = false;
+        setPref(PARAM_KEYS.enableThinking, '0');
+        renderParams();
+        els.input.focus();
+        toast('已停止深度思考并切换为快速模式，点击发送即快速回答', 'success');
+      }, 80);
+    });
+
+    const t0 = Date.now();
+    const liveTimer = setInterval(() => {
+      thinkTimeEl.textContent = Math.floor((Date.now() - t0) / 1000) + 's';
+    }, 500);
+
+    let answerAcc = '';
+    let thinkAcc = '';
+    let usage = null;
+    let modelId = '';
+    let renderTimer = null;
+    const renderAnswer = () => {
+      if (renderTimer) return;
+      renderTimer = setTimeout(() => {
+        renderTimer = null;
+        bubbleEl.innerHTML = (window.MD ? MD.render(answerAcc) : esc(answerAcc)) + '<span class="stream-cursor"></span>';
+        els.messages.scrollTop = els.messages.scrollHeight;
+      }, 60);
+    };
+
+    // 读取 SSE 流
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    let kbStep = null;
+    let streamErr = null;
+    while (true) {
+      let chunk;
+      try {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunk = decoder.decode(value, { stream: true });
+      } catch (e2) {
+        if (e2 && e2.name === 'AbortError') throw e2;
+        throw new Error('流式读取中断：' + (e2.message || e2));
+      }
+      buf += chunk;
+      const events = buf.split('\n\n');
+      buf = events.pop() || '';
+      for (const ev of events) {
+        for (const line of ev.split('\n')) {
+          const line2 = line.trim();
+          if (!line2.startsWith('data:')) continue;
+          const payload = line2.slice(5).trim();
+          if (payload === '[DONE]') continue;
+          let obj;
+          try { obj = JSON.parse(payload); } catch (_) { continue; }
+          if (obj.kbStep) { kbStep = obj.kbStep; continue; }
+          const delta = (obj.choices && obj.choices[0] && obj.choices[0].delta) || {};
+          if (delta.reasoning_content) {
+            if (thinkAcc === '') { thinkStatus.textContent = '正在深度思考'; thinkBody.parentElement.classList.add('has-content'); }
+            thinkAcc += delta.reasoning_content;
+            thinkBody.textContent = thinkAcc;
+            thinkBody.scrollTop = thinkBody.scrollHeight;
+          }
+          if (delta.content) { answerAcc += delta.content; renderAnswer(); }
+          if (obj.usage) usage = obj.usage;
+          if (obj.model_id) modelId = obj.model_id;
+        }
+      }
+    }
+    clearInterval(liveTimer);
+    if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
+    bubbleEl.innerHTML = window.MD ? MD.render(answerAcc) : esc(answerAcc);
+
+    // 思考完成态：自动折叠 + 状态文案（可点击展开回看）
+    thinkBox.classList.add('done');
+    thinkBox.classList.add('collapsed');
+    thinkStatus.classList.remove('thinking');
+    const secs = ((Date.now() - t0) / 1000).toFixed(1);
+    thinkTimeEl.textContent = secs + 's';
+    if (thinkAcc) thinkStatus.textContent = '已完成思考';
+
+    const metaBits = [`耗时 ${secs}s`];
+    if (usage && usage.total_tokens) {
+      metaBits.push(`输入 ${usage.prompt_tokens ?? '-'} · 输出 ${usage.completion_tokens ?? '-'} · 总 ${usage.total_tokens} tokens`);
+    }
+    if (kbStep) metaBits.push(`📚 已检索知识库「${kbStep.name}」${kbStep.chunks} 段`);
+    if (modelId) metaBits.push(`模型 ${esc(modelId)}`);
+    holder.querySelector('.meta').innerHTML = metaBits.join(' · ');
+
     await persistMessages([
       { role: 'user', content: userContent },
-      { role: 'assistant', content: r.content || '' }
+      { role: 'assistant', content: answerAcc }
     ]);
     // 自动以首条问题命名该对话（纯图片消息时用「图片对话」）
     if (currentConv && (currentConv.title === '新对话')) {
@@ -2226,11 +2435,13 @@ function applyWallpaper(url, blur) {
   if (url) {
     wallpaperLayer.style.backgroundImage = `url("${String(url).replace(/"/g, '')}")`;
     wallpaperLayer.style.display = '';
+    wallpaperLayer.classList.add('active'); // 仅在有壁纸时让 body 背景透明（CSS :has 配合）
     wallpaperLayer.classList.toggle('blur', !!blur);
   } else {
     wallpaperLayer.style.backgroundImage = 'none';
     wallpaperLayer.style.display = 'none';
     wallpaperLayer.classList.remove('blur');
+    wallpaperLayer.classList.remove('active');
   }
 }
 
@@ -2314,8 +2525,9 @@ els.teamLogoutBtn.addEventListener('click', async () => {
     });
   }
 
-  // 选中会话 / 切换配置后自动收起
+  // 选中会话 / 切换配置后自动收起（多选模式下不收起，否则没法连续勾选）
   document.getElementById('convList') && document.getElementById('convList').addEventListener('click', (e) => {
+    if (batchMode) return;
     if (e.target.closest('.conv-item') || e.target.closest('.conv-del')) close();
   });
   document.getElementById('configSelect') && document.getElementById('configSelect').addEventListener('change', close);

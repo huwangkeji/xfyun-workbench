@@ -160,6 +160,31 @@ a { color: var(--accent); text-decoration: none; }
 .conv-item .conv-del:hover { color: var(--danger); background: rgba(220,38,38,.1); }
 .conv-empty { color: var(--text-dim); font-size: 12px; text-align: center; padding: 14px 0; border: 1px dashed var(--border); border-radius: 9px; }
 
+/* ---------- 会话批量多选删除 ---------- */
+.conv-item .conv-check { display: none; align-items: center; flex: none; }
+.conv-item .chk-box {
+  width: 15px; height: 15px; border-radius: 4px; border: 1.5px solid var(--border);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; line-height: 1; color: #fff; transition: all .12s;
+}
+#convList.batch-mode .conv-item { cursor: pointer; }
+#convList.batch-mode .conv-item .conv-check { display: flex; }
+#convList.batch-mode .conv-item.selected { border-color: var(--accent); background: var(--accent-soft); }
+#convList.batch-mode .conv-item.selected .chk-box { background: var(--accent); border-color: var(--accent); }
+#convList.batch-mode .conv-item.selected .chk-box::after { content: '✓'; }
+#convList.batch-mode .conv-item .conv-del { display: none; }
+.conv-batch-bar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-top: 8px; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: 9px; background: var(--panel-2);
+  font-size: 12.5px; color: var(--text-dim);
+}
+.conv-batch-bar[hidden] { display: none; }
+.conv-batch-bar .cb-item { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; user-select: none; }
+.conv-batch-bar .cb-item input { accent-color: var(--accent); margin: 0; }
+.conv-batch-bar .batch-count { font-weight: 600; color: var(--text); }
+.conv-batch-bar .batch-actions { margin-left: auto; display: inline-flex; gap: 6px; }
+
 /* ---------- 标签 / 徽标 ---------- */
 .badge {
   display: inline-block; padding: 3px 9px; border-radius: 20px;
@@ -2579,11 +2604,13 @@ html[data-theme="dark"] .tab-btn.vertical.active { background: rgba(99, 102, 241
 }
 .chat-wallpaper.blur { filter: blur(6px) saturate(1.1); transform: scale(1.03); }
 
-/* 有壁纸时：body 背景透明，让壁纸层透出（壁纸层 z-index:-1 位于 body 背景之上、内容之下） */
-body.wb-page:has(.chat-wallpaper) { background: transparent; }
-/* 顶部/输入区保持轻微半透明，露出壁纸边缘 */
-body.wb-page:has(.chat-wallpaper) .chat-head { background: color-mix(in srgb, var(--panel) 82%, transparent); }
-body.wb-page:has(.chat-wallpaper) .chat-input { background: color-mix(in srgb, var(--panel) 82%, transparent); }
+  /* 有壁纸时：body 背景透明，让壁纸层透出（壁纸层 z-index:-1 位于 body 背景之上、内容之下）
+     注意：必须限定 .active —— 壁纸层节点是常驻创建的（无壁纸时 display:none），
+     若不限类名，:has() 永远命中会让 body 变透明，夜间模式透出 html 白底 */
+  body.wb-page:has(.chat-wallpaper.active) { background: transparent; }
+  /* 顶部/输入区保持轻微半透明，露出壁纸边缘 */
+  body.wb-page:has(.chat-wallpaper.active) .chat-head { background: color-mix(in srgb, var(--panel) 82%, transparent); }
+  body.wb-page:has(.chat-wallpaper.active) .chat-input { background: color-mix(in srgb, var(--panel) 82%, transparent); }
 
 /* ================= 响应模式胶囊切换（V3.18） ================= */
 
@@ -2970,3 +2997,206 @@ html[data-theme="dark"] .agent-bind-chip {
   padding: 9px 11px; color: var(--text);
 }
 .plugin-test-out.err { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, transparent); }
+
+/* ---------- 元宝式思考过程区块（流式） ---------- */
+.think-box {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 9px 12px;
+  margin-bottom: 10px;
+}
+.think-box.has-content { border-left: 3px solid var(--accent); }
+.think-head {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12.5px; color: var(--text-dim);
+}
+.think-ico { font-size: 14px; }
+.think-status { font-weight: 600; color: var(--text); }
+.think-status.thinking {
+  color: var(--accent);
+  animation: think-pulse 1.4s ease-in-out infinite;
+}
+@keyframes think-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+.think-time { font-size: 11px; color: var(--text-dim); }
+.think-toggle {
+  border: 0; background: none; cursor: pointer;
+  color: var(--text-dim); font-size: 12px; padding: 2px 4px;
+  transition: transform .15s;
+}
+.think-box.collapsed .think-toggle { transform: rotate(180deg); }
+.think-toggle:hover { color: var(--text); }
+.think-fast {
+  margin-left: auto; border: 0; background: none; cursor: pointer;
+  color: var(--accent); font-size: 12px; padding: 2px 4px; font-family: inherit;
+}
+.think-fast:hover { text-decoration: underline; }
+.think-box .think-body {
+  display: block; margin: 8px 0 0; padding: 8px 10px;
+  max-height: 190px; overflow-y: auto;
+  background: var(--panel); border-radius: 8px;
+  font-size: 12.5px; line-height: 1.7; color: var(--text-dim);
+  white-space: pre-wrap; word-break: break-word;
+  font-family: inherit;
+}
+.think-box.collapsed .think-body { display: none; }
+.think-box.done .think-body { max-height: 140px; }
+.think-box.done .think-status { color: var(--ok); }
+
+/* 正文流式光标 */
+.stream-cursor {
+  display: inline-block; width: 8px; height: 14px;
+  background: var(--accent); vertical-align: -2px;
+  animation: cursor-blink .8s steps(2) infinite;
+}
+@keyframes cursor-blink { 50% { opacity: 0; } }
+
+/* ============================================================
+   夜间模式整体美化（V3.39）—— 全部限定在 html[data-theme="dark"]，
+   日间主题不受影响。层次：bg #0b1526 → panel #131f36 → panel-2 #1b2a45
+   ============================================================ */
+
+/* 全局：深色细滚动条 */
+html[data-theme="dark"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+html[data-theme="dark"] ::-webkit-scrollbar-track { background: transparent; }
+html[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: #24344f; border-radius: 999px; border: 2px solid transparent; background-clip: padding-box;
+}
+html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: #37517a; background-clip: padding-box; }
+
+/* 顶栏：微渐变 + 蓝色描边分隔 */
+html[data-theme="dark"] .topbar {
+  background: linear-gradient(180deg, #101c33 0%, #0c1728 100%);
+  border-bottom-color: #1e2f4e;
+  box-shadow: 0 1px 0 rgba(79, 139, 251, .06), 0 2px 12px rgba(0, 0, 0, .35);
+}
+html[data-theme="dark"] .top-actions .btn {
+  background: rgba(148, 178, 230, .07);
+  border-color: rgba(148, 178, 230, .16);
+  color: #c6d4ec;
+}
+html[data-theme="dark"] .top-actions .btn:hover {
+  background: rgba(148, 178, 230, .14);
+  border-color: rgba(148, 178, 230, .3);
+  color: #e8f0fc;
+}
+html[data-theme="dark"] .top-actions .btn.primary {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  border-color: transparent;
+  color: #fff;
+}
+html[data-theme="dark"] .brand-title { color: #e8f0fc; }
+
+/* 工作台消息区：顶部蓝晕 + 右下青晕，让大片空白有纵深
+   （加在 .chat-messages 而不是 body，避免压住「有壁纸时 body 透明」规则；
+   自定义壁纸激活时豁免，让壁纸透出） */
+html[data-theme="dark"] .chat-messages {
+  background:
+    radial-gradient(1100px 380px at 50% 0, rgba(79, 139, 251, .08), transparent 65%),
+    radial-gradient(900px 500px at 108% 100%, rgba(20, 184, 166, .05), transparent 60%);
+}
+body.wb-page:has(.chat-wallpaper.active) .chat-messages { background: transparent; }
+
+/* 图标栏：更沉一档 + 激活项辉光 */
+html[data-theme="dark"] .icon-rail { background: #0d1727; border-right-color: #1e2f4e; }
+html[data-theme="dark"] .rail-item:hover { background: rgba(148, 178, 230, .08); color: #dbe6f7; }
+html[data-theme="dark"] .rail-item.active {
+  background: linear-gradient(180deg, rgba(79, 139, 251, .2), rgba(79, 139, 251, .08));
+  color: #7fb0ff;
+  box-shadow: inset 0 0 0 1px rgba(79, 139, 251, .25);
+}
+html[data-theme="dark"] .rail-item.active span { color: #9cc3ff; }
+
+/* 会话抽屉：深色底 + 会话卡片半透明 */
+html[data-theme="dark"] .side-drawer { background: #101b30; border-right-color: #1e2f4e; }
+html[data-theme="dark"] .side-drawer .conv-item {
+  background: rgba(148, 178, 230, .05);
+  border-color: rgba(148, 178, 230, .1);
+}
+html[data-theme="dark"] .side-drawer .conv-item:hover { background: rgba(148, 178, 230, .1); }
+html[data-theme="dark"] .side-drawer .conv-item.active {
+  background: rgba(79, 139, 251, .16);
+  border-color: rgba(79, 139, 251, .45);
+  color: #9cc3ff;
+}
+html[data-theme="dark"] .side-drawer .conv-item.active .conv-title { color: #cfe1ff; }
+html[data-theme="dark"] .side-drawer .conv-item.selected {
+  border-color: rgba(79, 139, 251, .55);
+  background: rgba(79, 139, 251, .2);
+}
+html[data-theme="dark"] .side-drawer .conv-item .chk-box { border-color: rgba(148, 178, 230, .4); }
+html[data-theme="dark"] .conv-batch-bar {
+  background: rgba(148, 178, 230, .06);
+  border-color: rgba(148, 178, 230, .14);
+}
+
+/* 聊天头部：当前配置徽章化 */
+html[data-theme="dark"] .chat-head { background: rgba(16, 27, 48, .9); }
+html[data-theme="dark"] .cur-config-name {
+  color: #9db1d4;
+  padding: 4px 12px; border-radius: 999px;
+  background: rgba(148, 178, 230, .07);
+  border: 1px solid rgba(148, 178, 230, .13);
+}
+
+/* 消息空态：图标 + 层次 */
+html[data-theme="dark"] .empty { color: #7e92b8; }
+html[data-theme="dark"] .empty::before {
+  content: '💬';
+  display: block;
+  font-size: 40px;
+  margin-bottom: 12px;
+  opacity: .55;
+  filter: grayscale(.2);
+}
+
+/* 聊天气泡：AI 气泡微渐变阴影；用户气泡更饱和 */
+html[data-theme="dark"] .msg .bubble {
+  background: linear-gradient(180deg, #16223b, #121d33);
+  border-color: #26375a;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .18);
+}
+html[data-theme="dark"] .msg.user .bubble {
+  background: linear-gradient(135deg, #24406e, #1d3050);
+  border-color: #33528a;
+}
+
+/* 输入区：textarea 聚焦光环 + 发送按钮辉光 + 附件圆底座 */
+html[data-theme="dark"] .chat-input { background: rgba(16, 27, 48, .92); }
+html[data-theme="dark"] .chat-input textarea {
+  background: #14203a;
+  border-color: #2a3c60;
+  transition: border-color .15s, box-shadow .15s;
+}
+html[data-theme="dark"] .chat-input textarea:focus {
+  border-color: rgba(79, 139, 251, .75);
+  box-shadow: 0 0 0 3px rgba(79, 139, 251, .16);
+  outline: none;
+}
+html[data-theme="dark"] .chat-input .send-side .btn.primary {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  border-color: transparent;
+  box-shadow: 0 4px 16px rgba(37, 99, 235, .35);
+}
+html[data-theme="dark"] .chat-input .send-side .btn.primary:hover {
+  box-shadow: 0 6px 20px rgba(37, 99, 235, .5);
+  transform: translateY(-1px);
+}
+html[data-theme="dark"] .chat-input .send-side .icon-btn {
+  background: rgba(148, 178, 230, .07);
+  border-color: rgba(148, 178, 230, .16);
+}
+html[data-theme="dark"] .chat-input .send-side .icon-btn:hover {
+  background: rgba(148, 178, 230, .15);
+  border-color: rgba(148, 178, 230, .3);
+}
+
+/* 工作模式提示文字 */
+html[data-theme="dark"] .attach-hint { color: #7e92b8; }
+
+/* 页脚：低调融入 */
+html[data-theme="dark"] .app-footer {
+  background: transparent;
+  border-top-color: #1e2f4e;
+  color: #5d7195;
+}
